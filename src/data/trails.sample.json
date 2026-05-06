@@ -1,0 +1,202 @@
+[
+  {
+    "id": "wa-001", "name": "Lake Serene & Bridal Veil Falls", "region": "Central Cascades",
+    "lat": 47.8218, "lng": -121.3502, "miles": 8.2, "elevationGainFt": 2521,
+    "difficulty": "Hard", "routeType": "OutAndBack", "landOwner": "USFS",
+    "parking": { "type": "nw_forest_pass", "notes": "Large trailhead lot", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "Paved to trailhead", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "some", "weatherHint": "Clear skies expected", "lastUpdatedISO": "2026-05-03T10:00:00Z", "notes": ["Trail is dry above 3000ft"] }
+  },
+  {
+    "id": "wa-002", "name": "Snow Lake", "region": "Snoqualmie Region",
+    "lat": 47.4499, "lng": -121.4359, "miles": 6.4, "elevationGainFt": 1800,
+    "difficulty": "Moderate", "routeType": "OutAndBack", "landOwner": "USFS",
+    "parking": { "type": "nw_forest_pass", "notes": "Alpental lot", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "I-90 exit 52, paved", "confidence": "high" },
+    "conditions": { "overall": "caution", "snow": "patchy", "mud": "some", "bugs": "none", "weatherHint": "Snow above 4500ft", "lastUpdatedISO": "2026-05-02T08:00:00Z", "notes": ["Bring microspikes in early season"] }
+  },
+  {
+    "id": "wa-003", "name": "Hurricane Ridge", "region": "Olympic Peninsula",
+    "lat": 47.9693, "lng": -123.4987, "miles": 3.0, "elevationGainFt": 700,
+    "difficulty": "Easy", "routeType": "Loop", "landOwner": "NPS",
+    "parking": { "type": "national_park_fee", "notes": "Olympic NP pass or $35 entry", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "Paved road, may close in winter", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "none", "weatherHint": "Views to Canada today", "lastUpdatedISO": "2026-05-04T09:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-004", "name": "Enchantments Core Zone", "region": "Central Cascades",
+    "lat": 47.5129, "lng": -120.8125, "miles": 18.0, "elevationGainFt": 4500,
+    "difficulty": "Strenuous", "routeType": "PointToPoint", "landOwner": "USFS",
+    "parking": { "type": "nw_forest_pass", "notes": "Snow Lakes or Eightmile TH", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "Icicle Creek Rd is paved", "confidence": "high" },
+    "conditions": { "overall": "avoid", "snow": "significant", "mud": "dry", "bugs": "none", "weatherHint": "Heavy snow above 6000ft", "lastUpdatedISO": "2026-05-01T12:00:00Z", "notes": ["Core zone permit required May–Oct", "Full snow coverage through June"] }
+  },
+  {
+    "id": "wa-005", "name": "Rattlesnake Ledge", "region": "Snoqualmie Region",
+    "lat": 47.4333, "lng": -121.7684, "miles": 4.0, "elevationGainFt": 1100,
+    "difficulty": "Moderate", "routeType": "OutAndBack", "landOwner": "DNR",
+    "parking": { "type": "discover_pass", "notes": "Discover Pass or $10 day-use", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "North Bend, paved", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "some", "weatherHint": "Popular weekend destination", "lastUpdatedISO": "2026-05-04T07:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-006", "name": "Mount Si", "region": "Snoqualmie Region",
+    "lat": 47.4884, "lng": -121.7254, "miles": 8.0, "elevationGainFt": 3150,
+    "difficulty": "Hard", "routeType": "OutAndBack", "landOwner": "DNR",
+    "parking": { "type": "discover_pass", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "North Bend area, paved", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "some", "lastUpdatedISO": "2026-05-03T08:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-007", "name": "Chain Lakes Loop", "region": "North Cascades",
+    "lat": 48.8637, "lng": -121.6856, "miles": 6.5, "elevationGainFt": 1450,
+    "difficulty": "Moderate", "routeType": "Loop", "landOwner": "NPS",
+    "parking": { "type": "national_park_fee", "notes": "Artist Point lot", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "SR-542, road opens late June", "confidence": "medium" },
+    "conditions": { "overall": "avoid", "snow": "significant", "mud": "dry", "bugs": "none", "weatherHint": "Road not yet open", "lastUpdatedISO": "2026-05-01T00:00:00Z", "notes": ["Artist Point road typically opens mid-July"] }
+  },
+  {
+    "id": "wa-008", "name": "Hoh Rain Forest Hall of Mosses", "region": "Olympic Peninsula",
+    "lat": 47.8596, "lng": -123.9352, "miles": 0.8, "elevationGainFt": 30,
+    "difficulty": "Easy", "routeType": "Loop", "landOwner": "NPS",
+    "parking": { "type": "national_park_fee", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "US-101 to Upper Hoh Rd", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "some", "lastUpdatedISO": "2026-05-04T08:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-009", "name": "Maple Pass Loop", "region": "North Cascades",
+    "lat": 48.5148, "lng": -120.6598, "miles": 7.2, "elevationGainFt": 2000,
+    "difficulty": "Hard", "routeType": "Loop", "landOwner": "USFS",
+    "parking": { "type": "nw_forest_pass", "notes": "Rainy Pass, Highway 20", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "Hwy 20 paved, closes in winter", "confidence": "medium" },
+    "conditions": { "overall": "caution", "snow": "patchy", "mud": "some", "bugs": "none", "lastUpdatedISO": "2026-05-02T10:00:00Z", "notes": ["Upper loop may have snow"] }
+  },
+  {
+    "id": "wa-010", "name": "Palouse Falls", "region": "Eastern Washington",
+    "lat": 46.6635, "lng": -118.2263, "miles": 1.5, "elevationGainFt": 200,
+    "difficulty": "Easy", "routeType": "OutAndBack", "landOwner": "StateParks",
+    "parking": { "type": "discover_pass", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "Paved park road", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "none", "weatherHint": "Falls running high — spectacular", "lastUpdatedISO": "2026-05-04T09:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-011", "name": "Summerland & Panhandle Gap", "region": "South Cascades",
+    "lat": 46.8637, "lng": -121.6293, "miles": 8.6, "elevationGainFt": 2100,
+    "difficulty": "Hard", "routeType": "OutAndBack", "landOwner": "NPS",
+    "parking": { "type": "national_park_fee", "notes": "White River area, Rainier NP", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "SR-410 to Sunrise Rd", "confidence": "high" },
+    "conditions": { "overall": "caution", "snow": "patchy", "mud": "some", "bugs": "none", "lastUpdatedISO": "2026-05-03T11:00:00Z", "notes": ["Upper section has snow — microspikes recommended"] }
+  },
+  {
+    "id": "wa-012", "name": "Twin Falls", "region": "Snoqualmie Region",
+    "lat": 47.4584, "lng": -121.7067, "miles": 2.6, "elevationGainFt": 500,
+    "difficulty": "Easy", "routeType": "OutAndBack", "landOwner": "DNR",
+    "parking": { "type": "discover_pass", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "I-90 exit 34", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "some", "lastUpdatedISO": "2026-05-04T08:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-013", "name": "Desolation Peak", "region": "North Cascades",
+    "lat": 48.7238, "lng": -121.0784, "miles": 9.4, "elevationGainFt": 4400,
+    "difficulty": "Strenuous", "routeType": "OutAndBack", "landOwner": "NPS",
+    "parking": { "type": "free", "notes": "Ross Lake ferry access or trail in from Hozomeen", "confidence": "medium" },
+    "access": { "level": "high_clearance", "notes": "Hozomeen road via Canada is rough", "confidence": "low" },
+    "conditions": { "overall": "avoid", "snow": "significant", "mud": "heavy", "bugs": "none", "lastUpdatedISO": "2026-04-28T00:00:00Z", "notes": ["Full snow coverage; wait until July"] }
+  },
+  {
+    "id": "wa-014", "name": "Franklin Falls", "region": "Snoqualmie Region",
+    "lat": 47.4148, "lng": -121.5326, "miles": 2.0, "elevationGainFt": 400,
+    "difficulty": "Easy", "routeType": "OutAndBack", "landOwner": "USFS",
+    "parking": { "type": "nw_forest_pass", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "I-90 exit 47, paved", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "none", "lastUpdatedISO": "2026-05-04T08:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-015", "name": "Spray Park", "region": "South Cascades",
+    "lat": 46.9476, "lng": -121.8462, "miles": 8.0, "elevationGainFt": 1700,
+    "difficulty": "Moderate", "routeType": "OutAndBack", "landOwner": "NPS",
+    "parking": { "type": "national_park_fee", "notes": "Mowich Lake, Rainier NP", "confidence": "high" },
+    "access": { "level": "rough", "notes": "Mowich Lake Rd is gravel — passable in sedan", "confidence": "medium" },
+    "conditions": { "overall": "caution", "snow": "patchy", "mud": "some", "bugs": "none", "lastUpdatedISO": "2026-05-03T09:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-016", "name": "Tiger Mountain Trail", "region": "Puget Sound & Islands",
+    "lat": 47.5135, "lng": -121.9543, "miles": 6.0, "elevationGainFt": 1200,
+    "difficulty": "Moderate", "routeType": "Loop", "landOwner": "DNR",
+    "parking": { "type": "free", "notes": "Several free lots", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "Near Issaquah, paved", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "some", "lastUpdatedISO": "2026-05-04T07:30:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-017", "name": "Tolmie Peak Lookout", "region": "South Cascades",
+    "lat": 46.9310, "lng": -121.8690, "miles": 6.5, "elevationGainFt": 1000,
+    "difficulty": "Moderate", "routeType": "OutAndBack", "landOwner": "NPS",
+    "parking": { "type": "national_park_fee", "notes": "Mowich Lake", "confidence": "high" },
+    "access": { "level": "rough", "notes": "Gravel road OK for most cars", "confidence": "medium" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "none", "lastUpdatedISO": "2026-05-04T09:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-018", "name": "Ape Cave Lava Tube", "region": "Southwest Washington",
+    "lat": 46.1090, "lng": -122.2116, "miles": 2.5, "elevationGainFt": 100,
+    "difficulty": "Easy", "routeType": "OutAndBack", "landOwner": "USFS",
+    "parking": { "type": "nw_forest_pass", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "Paved all the way", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "none", "weatherHint": "Bring a headlamp — cave is 42°F year-round", "lastUpdatedISO": "2026-05-04T08:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-019", "name": "Heather Lake", "region": "North Cascades",
+    "lat": 48.0855, "lng": -121.7282, "miles": 4.6, "elevationGainFt": 1050,
+    "difficulty": "Moderate", "routeType": "OutAndBack", "landOwner": "USFS",
+    "parking": { "type": "nw_forest_pass", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "Mountain Loop Hwy, paved", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "some", "bugs": "some", "lastUpdatedISO": "2026-05-03T10:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-020", "name": "Cowiche Canyon", "region": "Eastern Washington",
+    "lat": 46.6254, "lng": -120.6082, "miles": 5.5, "elevationGainFt": 350,
+    "difficulty": "Easy", "routeType": "OutAndBack", "landOwner": "Other",
+    "parking": { "type": "free", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "Yakima area, paved", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "none", "weatherHint": "Wildflowers peaking now", "lastUpdatedISO": "2026-05-04T09:30:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-021", "name": "Ebey's Landing Loop", "region": "Puget Sound & Islands",
+    "lat": 48.2173, "lng": -122.6987, "miles": 5.0, "elevationGainFt": 300,
+    "difficulty": "Easy", "routeType": "Loop", "landOwner": "NPS",
+    "parking": { "type": "free", "notes": "Whidbey Island", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "Ferry from Mukilteo", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "none", "weatherHint": "Ocean views, bring a layer", "lastUpdatedISO": "2026-05-04T08:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-022", "name": "Mailbox Peak", "region": "Snoqualmie Region",
+    "lat": 47.5462, "lng": -121.6781, "miles": 9.4, "elevationGainFt": 4000,
+    "difficulty": "Strenuous", "routeType": "OutAndBack", "landOwner": "USFS",
+    "parking": { "type": "nw_forest_pass", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "I-90 exit 34", "confidence": "high" },
+    "conditions": { "overall": "caution", "snow": "patchy", "mud": "some", "bugs": "none", "lastUpdatedISO": "2026-05-03T08:00:00Z", "notes": ["Upper trail rocky and steep — trekking poles recommended"] }
+  },
+  {
+    "id": "wa-023", "name": "Cape Flattery", "region": "Olympic Peninsula",
+    "lat": 48.3848, "lng": -124.7196, "miles": 1.5, "elevationGainFt": 200,
+    "difficulty": "Easy", "routeType": "OutAndBack", "landOwner": "Other",
+    "parking": { "type": "free", "notes": "Makah tribal permit required ($10)", "confidence": "high" },
+    "access": { "level": "sedan_ok", "notes": "Neah Bay area, paved", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "none", "weatherHint": "NW corner of the contiguous US", "lastUpdatedISO": "2026-05-04T09:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-024", "name": "Juniper Dunes Wilderness", "region": "Eastern Washington",
+    "lat": 46.4892, "lng": -118.9012, "miles": 4.0, "elevationGainFt": 400,
+    "difficulty": "Moderate", "routeType": "Loop", "landOwner": "Other",
+    "parking": { "type": "free", "confidence": "high" },
+    "access": { "level": "high_clearance", "notes": "Dirt road — high clearance strongly recommended", "confidence": "high" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "none", "weatherHint": "Hot in summer — go early", "lastUpdatedISO": "2026-05-04T08:00:00Z", "notes": [] }
+  },
+  {
+    "id": "wa-025", "name": "Spray Falls", "region": "South Cascades",
+    "lat": 46.9390, "lng": -121.8550, "miles": 5.0, "elevationGainFt": 900,
+    "difficulty": "Moderate", "routeType": "OutAndBack", "landOwner": "NPS",
+    "parking": { "type": "national_park_fee", "notes": "Mowich Lake, Rainier NP", "confidence": "high" },
+    "access": { "level": "rough", "notes": "Gravel road, washboard in spots", "confidence": "medium" },
+    "conditions": { "overall": "go", "snow": "none", "mud": "dry", "bugs": "some", "lastUpdatedISO": "2026-05-04T09:00:00Z", "notes": [] }
+  }
+]
