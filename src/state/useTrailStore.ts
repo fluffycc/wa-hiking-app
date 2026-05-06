@@ -20,7 +20,7 @@ function derive(trails: Trail[], query: string, filters: FilterState, sortKey: S
   return sortTrails(filterTrails(searchTrails(trails, query), filters), sortKey)
 }
 
-export const useTrailStore = create<TrailStore>((set, get) => ({
+export const useTrailStore = create<TrailStore>((set) => ({
   trails: trailsData as Trail[],
   searchQuery: '',
   sortKey: 'relevance',

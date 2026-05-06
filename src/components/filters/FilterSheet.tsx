@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useTrailStore } from '../../state/useTrailStore'
-import { countActiveFilters, DEFAULT_FILTERS } from '../../domain/filters'
+import { countActiveFilters } from '../../domain/filters'
 import type { Difficulty, RouteType } from '../../domain/types'
 
 interface Props {
