@@ -2,7 +2,7 @@ import { useUiStore } from '../state/useUiStore'
 import { MapPage } from '../pages/MapPage'
 import { ExploreListPage } from '../pages/ExploreListPage'
 import { SavedPage } from '../pages/SavedPage'
-import { FeedbackButton } from '../components/feedback/FeedbackButton'
+import { TrailBottomSheet } from '../components/map/TrailBottomSheet'
 
 type Tab = 'map' | 'explore' | 'saved'
 
@@ -18,17 +18,17 @@ export function AppShell() {
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-trail-bg">
       {/* Page content */}
-      <div className="flex-1 overflow-hidden relative">
+      <div className="flex-1 overflow-hidden relative min-h-0">
         <div className={activeTab === 'map'     ? 'block h-full' : 'hidden'}><MapPage /></div>
         <div className={activeTab === 'explore' ? 'block h-full' : 'hidden'}><ExploreListPage /></div>
         <div className={activeTab === 'saved'   ? 'block h-full' : 'hidden'}><SavedPage /></div>
       </div>
 
-      {/* Feedback button */}
-      <FeedbackButton />
+      {/* Bottom sheet lives here so it's always above the nav and not clipped by map */}
+      <TrailBottomSheet />
 
       {/* Bottom tab bar */}
-      <nav className="flex-shrink-0 bg-white border-t border-gray-100 safe-area-bottom">
+      <nav className="flex-shrink-0 bg-white border-t border-gray-100 safe-area-bottom relative z-50">
         <div className="flex">
           {TABS.map(tab => {
             const active = activeTab === tab.key
@@ -43,7 +43,6 @@ export function AppShell() {
                 <span className={`text-[10px] font-body font-medium ${active ? 'text-trail-green' : ''}`}>
                   {tab.label}
                 </span>
-                {active && <div className="absolute bottom-0 w-8 h-0.5 bg-trail-green rounded-full" />}
               </button>
             )
           })}

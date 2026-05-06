@@ -5,8 +5,9 @@ import { TrailCard } from '../trail/TrailCard'
 
 export function TrailBottomSheet() {
   const { selectedTrailId, setSelectedTrailId, bottomSheetState, setBottomSheetState } = useUiStore()
-  const { filteredTrails } = useTrailStore()
-  const trail = filteredTrails.find(t => t.id === selectedTrailId)
+  const { trails } = useTrailStore()
+  // Search all trails, not just filtered, so selection always works
+  const trail = trails.find(t => t.id === selectedTrailId)
 
   if (bottomSheetState === 'hidden' || !trail) return null
 
@@ -14,8 +15,8 @@ export function TrailBottomSheet() {
 
   return (
     <div
-      className={`absolute bottom-16 left-0 right-0 z-30 bg-trail-bg rounded-t-3xl shadow-sheet transition-all duration-300
-        ${isExpanded ? 'top-16' : 'h-52'}`}
+      className={`fixed left-0 right-0 z-40 bg-trail-bg rounded-t-3xl shadow-sheet transition-all duration-300
+        ${isExpanded ? 'top-16 bottom-16' : 'bottom-16 h-56'}`}
     >
       {/* Drag handle */}
       <div
@@ -26,13 +27,11 @@ export function TrailBottomSheet() {
       </div>
 
       {isExpanded ? (
-        /* Expanded — full details */
         <div className="overflow-y-auto h-[calc(100%-3rem)] px-5 pb-8">
           <TrailDetails trail={trail} />
         </div>
       ) : (
-        /* Preview — card + tap to expand */
-        <div className="px-4" onClick={() => setBottomSheetState('expanded')}>
+        <div className="px-4 cursor-pointer" onClick={() => setBottomSheetState('expanded')}>
           <TrailCard trail={trail} selected />
           <p className="text-center text-xs text-trail-stone mt-2 font-body">Tap to see full details ↑</p>
         </div>

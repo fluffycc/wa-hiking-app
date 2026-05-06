@@ -1,5 +1,4 @@
 import { TrailMap } from '../components/map/TrailMap'
-import { TrailBottomSheet } from '../components/map/TrailBottomSheet'
 import { QuickFilterChips } from '../components/filters/QuickFilterChips'
 import { useTrailStore } from '../state/useTrailStore'
 
@@ -7,10 +6,10 @@ export function MapPage() {
   const { searchQuery, setSearchQuery, filteredTrails } = useTrailStore()
 
   return (
-    <div className="relative flex flex-col h-full">
+    <div className="relative flex flex-col h-full min-h-0">
       {/* Search + chips overlay */}
-      <div className="absolute top-3 left-3 right-3 z-20 space-y-2">
-        <div className="relative">
+      <div className="absolute top-3 left-3 right-3 z-20 space-y-2 pointer-events-none">
+        <div className="relative pointer-events-auto">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
           <input
             value={searchQuery}
@@ -22,18 +21,17 @@ export function MapPage() {
             <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">✕</button>
           )}
         </div>
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl px-3 py-2 shadow-card">
+        <div className="bg-white/90 backdrop-blur-sm rounded-2xl px-3 py-2 shadow-card pointer-events-auto">
           <QuickFilterChips />
         </div>
-        <div className="text-xs text-trail-stone font-body bg-white/80 backdrop-blur-sm rounded-full px-3 py-1 w-fit shadow-sm">
+        <div className="text-xs text-trail-stone font-body bg-white/80 backdrop-blur-sm rounded-full px-3 py-1 w-fit shadow-sm pointer-events-auto">
           {filteredTrails.length} trail{filteredTrails.length !== 1 ? 's' : ''}
         </div>
       </div>
 
-      {/* Map */}
-      <div className="flex-1 relative">
+      {/* Map fills remaining space */}
+      <div className="flex-1 min-h-0 h-full">
         <TrailMap />
-        <TrailBottomSheet />
       </div>
     </div>
   )
