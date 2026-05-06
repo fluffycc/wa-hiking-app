@@ -7,7 +7,6 @@ export function MapPage() {
 
   return (
     <div className="relative flex flex-col h-full min-h-0">
-      {/* Search + chips overlay */}
       <div className="absolute top-3 left-3 right-3 z-20 space-y-2 pointer-events-none">
         <div className="relative pointer-events-auto">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">🔍</span>
@@ -29,8 +28,7 @@ export function MapPage() {
         </div>
       </div>
 
-      {/* Map fills remaining space */}
-      <div className="flex-1 min-h-0 h-full">
+      <div className="flex-1 min-h-0" style={{ position: 'relative', zIndex: 0, isolation: 'isolate', height: '100%' }}>
         <TrailMap />
       </div>
     </div>
