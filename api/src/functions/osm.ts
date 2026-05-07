@@ -15,7 +15,7 @@ const OVERPASS_INSTANCES = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ]
 
-const USER_AGENT = 'WAHikingApp/1.0 (contact: you@example.com)'
+const USER_AGENT = 'WAHikingApp/1.0'
 
 const OSM_WAYS_QUERY = `
 [out:json][timeout:120];
@@ -39,71 +39,28 @@ function validateSyncToken(req: HttpRequest): boolean {
   return token === process.env['SYNC_SECRET_TOKEN']
 }
 
-function safeGetContainer(context: InvocationContext) {
-  try {
-    const container = getTrailsContainer()
-    context.log('[OSM] Cosmos container initialized')
-    return container
-  } catch (e) {
-    context.error('[OSM] Cosmos init failed', e)
-    throw new Error('COSMOS_INIT_FAILED')
-  }
-}
-
-async function safeFetch(url: string, body: string, context: InvocationContext) {
-  const start = Date.now()
-
-  try {
-    context.log(`[OSM] Fetching ${url}`)
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': USER_AGENT,
-      },
-      body,
-    })
-
-    const text = await res.text()
-    const ms = Date.now() - start
-
-    context.log(`[OSM] ${url} responded in ${ms}ms (${text.length} bytes)`)
-
-    if (!res.ok) {
-      throw new Error(`${url} HTTP ${res.status}`)
-    }
-
-    if (!text || text.length < 10) {
-      throw new Error(`${url} empty response`)
-    }
-
-    try {
-      return JSON.parse(text) as { elements: OsmElement[] }
-    } catch {
-      throw new Error(`${url} invalid JSON: ${text.slice(0, 200)}`)
-    }
-
-  } catch (e) {
-    const ms = Date.now() - start
-    context.warn(`[OSM] ${url} failed after ${ms}ms`, e)
-    throw e
-  }
-}
-
-async function queryOverpass(
-  query: string,
-  context: InvocationContext
-): Promise<{ elements: OsmElement[] }> {
-
+async function queryOverpass(query: string): Promise<{ elements: OsmElement[] }> {
   let lastError = ''
 
   for (const url of OVERPASS_INSTANCES) {
     try {
-      return await safeFetch(url, `data=${encodeURIComponent(query)}`, context)
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': USER_AGENT,
+        },
+        body: `data=${encodeURIComponent(query)}`,
+      })
+
+      if (!res.ok) {
+        lastError = `${url} -> ${res.status}`
+        continue
+      }
+
+      return await res.json() as { elements: OsmElement[] }
     } catch (e) {
-      lastError = String(e)
-      continue
+      lastError = `${url} failed`
     }
   }
 
@@ -115,40 +72,27 @@ async function osmSyncHandler(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
 
-  const requestId = crypto.randomUUID()
-  const startTime = Date.now()
-
-  context.log(`[OSM][${requestId}] START`)
-
   if (!validateSyncToken(req)) {
-    return {
-      status: 401,
-      jsonBody: { ok: false, error: 'Unauthorized', requestId },
-    }
+    return { status: 401, jsonBody: { ok: false, error: 'Unauthorized' } }
   }
 
+  let upserted = 0
+  let errors = 0
+
   try {
-    const container = safeGetContainer(context)
+    context.log('Starting OSM sync...')
 
-    // optional Cosmos sanity check (non-fatal)
-    try {
-      await container.items.query('SELECT TOP 1 c.id FROM c').fetchAll()
-      context.log(`[OSM][${requestId}] Cosmos OK`)
-    } catch (e) {
-      context.error(`[OSM][${requestId}] Cosmos query failed`, e)
-    }
-
-    const data = await queryOverpass(OSM_WAYS_QUERY, context)
+    const data = await queryOverpass(OSM_WAYS_QUERY)
 
     const ways = (data.elements ?? []).filter(
       e => e.type === 'way' && e.center && e.tags?.name
     )
 
-    context.log(`[OSM][${requestId}] ways found: ${ways.length}`)
+    context.log(`OSM ways found: ${ways.length}`)
 
-    let upserted = 0
-    let errors = 0
+    const container = getTrailsContainer()
 
+    // ⚠️ IMPORTANT: avoid Promise.all overload
     const BATCH_SIZE = 10
 
     for (let i = 0; i < ways.length; i += BATCH_SIZE) {
@@ -156,19 +100,15 @@ async function osmSyncHandler(
 
       for (const way of batch) {
         try {
-          const tags = way.tags
-          const center = way.center
-
-          if (!tags?.name || !center) continue
-
-          const lat = center.lat
-          const lng = center.lon
+          const tags = way.tags!
+          const lat = way.center!.lat
+          const lng = way.center!.lon
 
           const region = regionFromLatLng(lat, lng)
-          const owner = operatorToLandOwner(tags.operator)
+          const owner = operatorToLandOwner(tags['operator'])
 
-          const miles = tags.distance
-            ? metersToMiles(parseFloat(tags.distance) * 1000)
+          const miles = tags['distance']
+            ? metersToMiles(parseFloat(tags['distance']) * 1000)
             : 3.0
 
           await container.items.upsert({
@@ -176,15 +116,16 @@ async function osmSyncHandler(
             pk: region,
 
             osmId: String(way.id),
-            name: cleanName(tags.name),
+            name: cleanName(tags['name']),
             region,
 
             lat,
             lng,
+
             miles,
             elevationGainFt: 0,
 
-            difficulty: osmSacScaleToDifficulty(tags.sac_scale ?? 'hiking'),
+            difficulty: osmSacScaleToDifficulty(tags['sac_scale'] ?? 'hiking'),
             routeType: 'OutAndBack',
 
             landOwner: owner,
@@ -212,42 +153,41 @@ async function osmSyncHandler(
           })
 
           upserted++
-
         } catch (e) {
           errors++
-          context.warn(`[OSM][${requestId}] upsert failed`, e)
+          context.warn(
+            `OSM upsert failed for ${way.id}: ${
+              e instanceof Error ? e.message : String(e)
+            }`
+          )
         }
       }
 
+      // throttle between batches (CRITICAL for Azure + Overpass)
       await new Promise(r => setTimeout(r, 1500))
     }
-
-    const duration = Date.now() - startTime
-    context.log(`[OSM][${requestId}] DONE in ${duration}ms`)
 
     return {
       status: 200,
       jsonBody: {
         ok: true,
-        requestId,
         upserted,
         errors,
-        durationMs: duration,
       },
     }
 
   } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err))
-
-    context.error(`[OSM][${requestId}] FATAL ERROR`, error)
+    context.error(
+      `OSM sync fatal error: ${
+        err instanceof Error ? err.message : String(err)
+      }`
+    )
 
     return {
       status: 500,
       jsonBody: {
         ok: false,
-        requestId,
-        error: error.message,
-        stack: error.stack,
+        error: err instanceof Error ? err.message : String(err),
       },
     }
   }
