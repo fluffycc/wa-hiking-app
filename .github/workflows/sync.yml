@@ -33,11 +33,13 @@ jobs:
     steps:
       - name: Trigger conditions sync
         run: |
-          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync-conditions" \
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "${{ secrets.SWA_API_URL }}/api/sync-conditions" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --fail --retry 3 --retry-delay 10
-          echo "Conditions sync triggered"
+            -H "Content-Type: application/json")
+          echo "Response: $RESPONSE"
+          STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d: -f2)
+          if [ "$STATUS" != "200" ]; then exit 1; fi
 
   # ── OSM trail sync — weekly only ──────────────────────────────────────────
   sync-osm:
@@ -50,12 +52,13 @@ jobs:
     steps:
       - name: Trigger OSM sync
         run: |
-          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync-osm" \
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "${{ secrets.SWA_API_URL }}/api/sync-osm" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --fail --retry 3 --retry-delay 30 \
-            --max-time 600
-          echo "OSM sync triggered"
+            -H "Content-Type: application/json")
+          echo "Response: $RESPONSE"
+          STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d: -f2)
+          if [ "$STATUS" != "200" ]; then exit 1; fi
 
   # ── WA DNR sync — weekly only ─────────────────────────────────────────────
   sync-wadnr:
@@ -69,12 +72,13 @@ jobs:
     steps:
       - name: Trigger WA DNR sync
         run: |
-          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync-wadnr" \
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "${{ secrets.SWA_API_URL }}/api/sync-wadnr" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --fail --retry 3 --retry-delay 10 \
-            --max-time 300
-          echo "WA DNR sync triggered"
+            -H "Content-Type: application/json")
+          echo "Response: $RESPONSE"
+          STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d: -f2)
+          if [ "$STATUS" != "200" ]; then exit 1; fi
 
   # ── WA State Parks sync — weekly only ────────────────────────────────────
   sync-waparks:
@@ -88,9 +92,10 @@ jobs:
     steps:
       - name: Trigger WA Parks sync
         run: |
-          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync-waparks" \
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "${{ secrets.SWA_API_URL }}/api/sync-waparks" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --fail --retry 3 --retry-delay 10 \
-            --max-time 300
-          echo "WA Parks sync triggered"
+            -H "Content-Type: application/json")
+          echo "Response: $RESPONSE"
+          STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d: -f2)
+          if [ "$STATUS" != "200" ]; then exit 1; fi
