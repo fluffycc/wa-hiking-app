@@ -33,7 +33,7 @@ jobs:
     steps:
       - name: Trigger conditions sync
         run: |
-          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync/conditions" \
+          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync-conditions" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" \
             --fail --retry 3 --retry-delay 10
@@ -50,7 +50,7 @@ jobs:
     steps:
       - name: Trigger OSM sync
         run: |
-          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync/osm" \
+          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync-osm" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" \
             --fail --retry 3 --retry-delay 30 \
@@ -69,7 +69,7 @@ jobs:
     steps:
       - name: Trigger WA DNR sync
         run: |
-          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync/wadnr" \
+          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync-wadnr" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" \
             --fail --retry 3 --retry-delay 10 \
@@ -88,7 +88,7 @@ jobs:
     steps:
       - name: Trigger WA Parks sync
         run: |
-          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync/waparks" \
+          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync-waparks" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" \
             --fail --retry 3 --retry-delay 10 \
