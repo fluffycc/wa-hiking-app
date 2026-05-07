@@ -31,20 +31,6 @@ interface OsmElement {
   tags?: Record<string, string>
 }
 
-/**
- * CLEAN fetch (NO AbortController injection, avoids SWA crash cases)
- */
-async function safeFetch(url: string, body: string): Promise<Response> {
-  return fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': USER_AGENT,
-    },
-    body,
-  })
-}
-
 function validateSyncToken(req: HttpRequest): boolean {
   const token =
     req.headers.get('x-sync-token') ??
@@ -53,60 +39,81 @@ function validateSyncToken(req: HttpRequest): boolean {
   return token === process.env['SYNC_SECRET_TOKEN']
 }
 
-function safeGetContainer(context: InvocationContext) {
-  try {
-    return getTrailsContainer()
-  } catch (e) {
-    context.error('Cosmos init failed:', e)
-    throw new Error('COSMOS_INIT_FAILED')
-  }
-}
-
-async function queryOverpass(query: string): Promise<{ elements: OsmElement[] }> {
+async function queryOverpass(query: string, context: InvocationContext): Promise<{ elements: OsmElement[] }> {
   let lastError = ''
 
   for (const url of OVERPASS_INSTANCES) {
     try {
-      const res = await safeFetch(url, `data=${encodeURIComponent(query)}`)
+      context.log(`Overpass trying: ${url}`)
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': USER_AGENT,
+        },
+        body: `data=${encodeURIComponent(query)}`,
+      })
 
       if (!res.ok) {
-        lastError = `${url} -> ${res.status}`
+        lastError = `${url} -> HTTP ${res.status}`
         continue
       }
 
       const text = await res.text()
 
-      if (!text || text.length < 10) {
-        lastError = `${url} returned empty response`
+      let json: any
+      try {
+        json = JSON.parse(text)
+      } catch {
+        lastError = `${url} returned invalid JSON`
         continue
       }
 
-      try {
-        return JSON.parse(text) as { elements: OsmElement[] }
-      } catch {
-        lastError = `${url} invalid JSON: ${text.slice(0, 150)}`
+      if (!json?.elements) {
+        lastError = `${url} missing elements`
         continue
       }
+
+      return json as { elements: OsmElement[] }
 
     } catch (e) {
-      lastError = `${url} failed: ${String(e)}`
+      lastError = `${url} failed: ${e instanceof Error ? e.message : String(e)}`
     }
   }
 
   throw new Error(`All Overpass instances failed: ${lastError}`)
 }
 
-async function osmSyncHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+async function osmSyncHandler(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
+
   if (!validateSyncToken(req)) {
-    return { status: 401, jsonBody: { ok: false, error: 'Unauthorized' } }
+    return {
+      status: 401,
+      jsonBody: { ok: false, error: 'Unauthorized' },
+    }
   }
 
   try {
-    context.log('Starting OSM sync...')
+    context.log('🚀 Starting OSM sync...')
 
-    const container = safeGetContainer(context)
-
-    const data = await queryOverpass(OSM_WAYS_QUERY)
+    let data
+    try {
+      data = await queryOverpass(OSM_WAYS_QUERY, context)
+    } catch (e) {
+      context.error('❌ Overpass failed completely:', e)
+      return {
+        status: 500,
+        jsonBody: {
+          ok: false,
+          error: 'Overpass failed',
+          detail: e instanceof Error ? e.message : String(e),
+        },
+      }
+    }
 
     const ways = (data.elements ?? []).filter(
       e => e.type === 'way' && e.center && e.tags?.name
@@ -114,81 +121,76 @@ async function osmSyncHandler(req: HttpRequest, context: InvocationContext): Pro
 
     context.log(`OSM ways found: ${ways.length}`)
 
+    const container = getTrailsContainer()
+
     let upserted = 0
     let errors = 0
 
-    const BATCH_SIZE = 10
+    for (const way of ways) {
+      try {
+        const tags = way.tags
+        const center = way.center
+        if (!tags || !center) continue
 
-    for (let i = 0; i < ways.length; i += BATCH_SIZE) {
-      const batch = ways.slice(i, i + BATCH_SIZE)
+        const lat = center.lat
+        const lng = center.lon
 
-      for (const way of batch) {
-        try {
-          const tags = way.tags
-          const center = way.center
+        const region = regionFromLatLng(lat, lng)
+        const owner = operatorToLandOwner(tags.operator)
 
-          if (!tags?.name || !center) continue
+        const miles = tags.distance
+          ? metersToMiles(parseFloat(tags.distance) * 1000)
+          : 3.0
 
-          const lat = center.lat
-          const lng = center.lon
+        await container.items.upsert({
+          id: `osm-${way.id}`,
+          pk: region,
 
-          const region = regionFromLatLng(lat, lng)
-          const owner = operatorToLandOwner(tags.operator)
+          osmId: String(way.id),
+          name: cleanName(tags.name),
+          region,
 
-          const miles = tags.distance
-            ? metersToMiles(parseFloat(tags.distance) * 1000)
-            : 3.0
+          lat,
+          lng,
 
-          await container.items.upsert({
-            id: `osm-${way.id}`,
-            pk: region,
+          miles,
+          elevationGainFt: 0,
 
-            osmId: String(way.id),
-            name: cleanName(tags.name),
-            region,
+          difficulty: osmSacScaleToDifficulty(tags.sac_scale ?? 'hiking'),
+          routeType: 'OutAndBack',
 
-            lat,
-            lng,
+          landOwner: owner,
+          parking: {
+            type: landOwnerToParking(owner),
+            confidence: 'low',
+          },
 
-            miles,
-            elevationGainFt: 0,
+          access: {
+            level: 'unknown',
+            notes: undefined,
+            confidence: 'low',
+          },
 
-            difficulty: osmSacScaleToDifficulty(tags.sac_scale ?? 'hiking'),
-            routeType: 'OutAndBack',
+          conditions: {
+            overall: 'unknown',
+            snow: 'none',
+            mud: 'dry',
+            bugs: 'none',
+            notes: [],
+          },
 
-            landOwner: owner,
-            parking: {
-              type: landOwnerToParking(owner),
-              confidence: 'low',
-            },
+          source: 'osm',
+          syncedAt: new Date().toISOString(),
+        })
 
-            access: {
-              level: 'unknown',
-              notes: undefined,
-              confidence: 'low',
-            },
-
-            conditions: {
-              overall: 'unknown',
-              snow: 'none',
-              mud: 'dry',
-              bugs: 'none',
-              notes: [],
-            },
-
-            source: 'osm',
-            syncedAt: new Date().toISOString(),
-          })
-
-          upserted++
-        } catch (e) {
-          errors++
-          context.warn(`OSM upsert failed ${way.id}: ${String(e)}`)
-        }
+        upserted++
+      } catch (e) {
+        errors++
+        context.warn(`OSM upsert failed ${way.id}: ${e instanceof Error ? e.message : String(e)}`)
       }
-
-      await new Promise(r => setTimeout(r, 1500))
     }
+
+    context.log(`✅ OSM sync complete: ${upserted} ok, ${errors} errors`)
 
     return {
       status: 200,
@@ -196,17 +198,13 @@ async function osmSyncHandler(req: HttpRequest, context: InvocationContext): Pro
     }
 
   } catch (err) {
-    const error = err instanceof Error ? err : new Error(String(err))
-
-    context.error('❌ OSM SYNC FAILED')
-    context.error(error.message)
-    context.error(error.stack)
+    context.error('❌ OSM SYNC FATAL ERROR:', err)
 
     return {
       status: 500,
       jsonBody: {
         ok: false,
-        error: error.message,
+        error: err instanceof Error ? err.message : String(err),
       },
     }
   }
