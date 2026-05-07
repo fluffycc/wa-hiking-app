@@ -193,13 +193,18 @@ async function osmSyncHandler(
     }
 
   } catch (err) {
-    context.error('OSM sync fatal:', err)
+    const error = err instanceof Error ? err : new Error(String(err))
+
+    context.error('❌ OSM SYNC FATAL ERROR')
+    context.error(error.message)
+    context.error(error.stack)
 
     return {
       status: 500,
       jsonBody: {
         ok: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: error.message,
+        stack: error.stack,
       },
     }
   }
