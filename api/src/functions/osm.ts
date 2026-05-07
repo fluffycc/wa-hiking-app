@@ -162,7 +162,7 @@ async function osmSyncHandler(req: HttpRequest, context: InvocationContext): Pro
           })
           upserted++
         } catch (e) {
-          context.warn(`Failed to upsert OSM way ${way.id}:`, e)
+          context.warn(`Failed to upsert OSM way ${way.id}: ${e instanceof Error ? e.message : String(e)}`)
           errors++
         }
       }))
@@ -175,7 +175,7 @@ async function osmSyncHandler(req: HttpRequest, context: InvocationContext): Pro
     return { status: 200, jsonBody: { ok: true, upserted, errors } }
 
   } catch (err) {
-    context.error('OSM sync failed:', err)
+    context.error(`OSM sync failed: ${err instanceof Error ? err.message : String(err)}`)
     return { status: 500, jsonBody: { ok: false, error: String(err) } }
   }
 }
