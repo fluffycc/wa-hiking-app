@@ -6,21 +6,17 @@ import {
   surfaceToAccessLevel, metersToMiles, cleanName,
 } from '../../shared/trailMapper'
 
-const OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
+// Multiple Overpass instances — tried in order if one fails
+const OVERPASS_INSTANCES = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+]
 
-// Query WA hiking route relations with geometry
-const OSM_QUERY = `
-[out:json][timeout:180];
-area["ISO3166-2"="US-WA"][admin_level=4]->.wa;
-(
-  relation["route"="hiking"]["name"]["distance"](area.wa);
-);
-out body;
->;
-out skel qt;
-`
+// Required by Overpass usage policy — identifies your application
+const USER_AGENT = 'WAHikingApp/1.0 (github.com/wa-hiking-app; trail-finder)'
 
-// Query WA trail ways with names and difficulty
+// WA hiking trail ways with names and difficulty tags
 const OSM_WAYS_QUERY = `
 [out:json][timeout:180];
 area["ISO3166-2"="US-WA"][admin_level=4]->.wa;
@@ -35,13 +31,77 @@ interface OsmElement {
   lat?: number
   lon?: number
   tags?: Record<string, string>
-  members?: Array<{ type: string; ref: number; role: string }>
-  nodes?: number[]
 }
 
 function validateSyncToken(req: HttpRequest): boolean {
   const token = req.headers.get('x-sync-token') ?? new URL(req.url).searchParams.get('token')
   return token === process.env['SYNC_SECRET_TOKEN']
+}
+
+// Try each Overpass instance until one succeeds
+async function queryOverpass(query: string): Promise<{ elements: OsmElement[] }> {
+  let lastError = ''
+  for (const url of OVERPASS_INSTANCES) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': USER_AGENT,
+        },
+        body: `data=${encodeURIComponent(query)}`,
+      })
+      if (res.status === 429 || res.status === 406) {
+        lastError = `${url} returned ${res.status} — trying next instance`
+        continue
+      }
+      if (!res.ok) {
+        lastError = `${url} returned ${res.status}`
+        continue
+      }
+      return await res.json() as { elements: OsmElement[] }
+    } catch (e) {
+      lastError = `${url} threw: ${e}`
+      continue
+    }
+  }
+  throw new Error(`All Overpass instances failed. Last error: ${lastError}`)
+}
+
+// Get road surface near a trailhead — best-effort, returns null if unavailable
+async function fetchRoadSurface(lat: number, lng: number): Promise<{
+  surface?: string; smoothness?: string; name?: string
+} | null> {
+  const query = `
+[out:json][timeout:20];
+way(around:2500,${lat},${lng})["highway"]["surface"];
+out body 5;
+`
+  try {
+    const data = await queryOverpass(query)
+    const roads = data.elements.filter(e => e.tags?.highway && e.tags?.surface)
+    if (!roads.length) return null
+    const worst = roads.reduce((prev, cur) => {
+      const rank = (s?: string) =>
+        ['paved','asphalt','gravel','compacted','unpaved','dirt','earth'].indexOf(s?.toLowerCase() ?? '')
+      return rank(cur.tags?.surface) > rank(prev.tags?.surface) ? cur : prev
+    })
+    return { surface: worst.tags?.surface, smoothness: worst.tags?.smoothness, name: worst.tags?.name }
+  } catch {
+    return null
+  }
+}
+
+function osmSmoothnessToCondition(s: string): 'excellent' | 'good' | 'rough' | 'very_rough' | 'unknown' {
+  switch (s.toLowerCase()) {
+    case 'excellent':    return 'excellent'
+    case 'good':         return 'good'
+    case 'intermediate': return 'good'
+    case 'bad':          return 'rough'
+    case 'very_bad':     return 'very_rough'
+    case 'horrible':     return 'very_rough'
+    default:             return 'unknown'
+  }
 }
 
 async function osmSyncHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
@@ -52,23 +112,13 @@ async function osmSyncHandler(req: HttpRequest, context: InvocationContext): Pro
   let errors = 0
 
   try {
-    // Fetch WA trail ways from Overpass
-    const res = await fetch(OVERPASS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `data=${encodeURIComponent(OSM_WAYS_QUERY)}`,
-    })
-
-    if (!res.ok) throw new Error(`Overpass error: ${res.status}`)
-    const data = await res.json() as { elements: OsmElement[] }
-
+    const data = await queryOverpass(OSM_WAYS_QUERY)
     const ways = data.elements.filter(e => e.type === 'way' && e.center && e.tags?.name)
     context.log(`Found ${ways.length} OSM trail ways in WA`)
 
     const container = getTrailsContainer()
+    const BATCH = 10 // smaller batches to avoid Overpass rate limits
 
-    // Fetch road surface data for trailheads in parallel batches
-    const BATCH = 20
     for (let i = 0; i < ways.length; i += BATCH) {
       const batch = ways.slice(i, i + BATCH)
       await Promise.all(batch.map(async way => {
@@ -76,50 +126,40 @@ async function osmSyncHandler(req: HttpRequest, context: InvocationContext): Pro
           const tags = way.tags!
           const lat = way.center!.lat
           const lng = way.center!.lon
-
-          // Get road surface near this trailhead from OSM
-          const roadData = await fetchRoadSurface(lat, lng)
-          const accessLevel = surfaceToAccessLevel(roadData?.surface, roadData?.smoothness)
-
           const region = regionFromLatLng(lat, lng)
           const owner = operatorToLandOwner(tags['operator'])
-          const distanceMeters = parseFloat(tags['distance'] ?? '0') * (tags['distance:units'] === 'km' ? 1000 : 1609)
-          const miles = distanceMeters > 0 ? metersToMiles(distanceMeters) : parseFloat(tags['est_width'] ?? '5')
 
-          const trailDoc = {
-            id:   `osm-${way.id}`,
-            pk:   region,
-            osmId: String(way.id),
-            name: cleanName(tags['name']),
-            region,
-            lat,
-            lng,
-            miles: miles > 0 ? miles : 3.0,
+          // Road surface — best effort, don't fail if unavailable
+          const roadData = await fetchRoadSurface(lat, lng).catch(() => null)
+          const accessLevel = surfaceToAccessLevel(roadData?.surface, roadData?.smoothness)
+
+          const distMeters = parseFloat(tags['distance'] ?? '0') * 1000
+          const miles = distMeters > 0 ? metersToMiles(distMeters) : 3.0
+
+          await container.items.upsert({
+            id:     `osm-${way.id}`,
+            pk:     region,
+            osmId:  String(way.id),
+            name:   cleanName(tags['name']),
+            region, lat, lng,
+            miles,
             elevationGainFt: 0,
-            difficulty: osmSacScaleToDifficulty(tags['sac_scale'] ?? 'hiking'),
-            routeType: tags['route'] === 'loop' ? 'Loop' : 'OutAndBack',
-            landOwner: owner,
-            parking: { type: landOwnerToParking(owner), confidence: 'low' as const },
-            access: { level: accessLevel, notes: roadData?.name, confidence: roadData ? 'medium' as const : 'low' as const },
-            conditions: {
-              overall: 'unknown' as const,
-              snow: 'none' as const,
-              mud: 'dry' as const,
-              bugs: 'none' as const,
-              notes: [],
-            },
+            difficulty:  osmSacScaleToDifficulty(tags['sac_scale'] ?? 'hiking'),
+            routeType:   'OutAndBack',
+            landOwner:   owner,
+            parking:     { type: landOwnerToParking(owner), confidence: 'low' },
+            access:      { level: accessLevel, notes: roadData?.name, confidence: roadData ? 'medium' : 'low' },
+            conditions:  { overall: 'unknown', snow: 'none', mud: 'dry', bugs: 'none', notes: [] },
             roadCondition: roadData ? {
-              surface: roadData.surface as 'paved' | 'gravel' | 'dirt' | 'unknown' ?? 'unknown',
-              condition: roadData.smoothness ? osmSmoothnessToCondition(roadData.smoothness) : 'unknown' as const,
-              notes: roadData.name,
-              confidence: 'medium' as const,
+              surface:   roadData.surface ?? 'unknown',
+              condition: roadData.smoothness ? osmSmoothnessToCondition(roadData.smoothness) : 'unknown',
+              notes:     roadData.name,
+              confidence: 'medium',
               lastUpdatedISO: new Date().toISOString(),
             } : undefined,
-            source: 'osm' as const,
-            syncedAt: new Date().toISOString(),
-          }
-
-          await container.items.upsert(trailDoc)
+            source:    'osm',
+            syncedAt:  new Date().toISOString(),
+          })
           upserted++
         } catch (e) {
           context.warn(`Failed to upsert OSM way ${way.id}:`, e)
@@ -127,10 +167,8 @@ async function osmSyncHandler(req: HttpRequest, context: InvocationContext): Pro
         }
       }))
 
-      // Respect Overpass rate limits
-      if (i + BATCH < ways.length) {
-        await new Promise(r => setTimeout(r, 1500))
-      }
+      // Respect Overpass rate limits between batches
+      if (i + BATCH < ways.length) await new Promise(r => setTimeout(r, 2000))
     }
 
     context.log(`OSM sync complete: ${upserted} upserted, ${errors} errors`)
@@ -139,54 +177,6 @@ async function osmSyncHandler(req: HttpRequest, context: InvocationContext): Pro
   } catch (err) {
     context.error('OSM sync failed:', err)
     return { status: 500, jsonBody: { ok: false, error: String(err) } }
-  }
-}
-
-async function fetchRoadSurface(lat: number, lng: number): Promise<{
-  surface?: string; smoothness?: string; name?: string
-} | null> {
-  const query = `
-[out:json][timeout:20];
-(
-  way(around:2500,${lat},${lng})["highway"]["surface"];
-  way(around:2500,${lat},${lng})["highway"]["smoothness"];
-);
-out body 5;
-`
-  try {
-    const res = await fetch(OVERPASS_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: `data=${encodeURIComponent(query)}`,
-    })
-    if (!res.ok) return null
-    const data = await res.json() as { elements: OsmElement[] }
-    const roads = data.elements.filter(e => e.tags?.highway && e.tags?.surface)
-    if (!roads.length) return null
-    // Prefer the worst road near the trailhead (conservative)
-    const worst = roads.reduce((prev, cur) => {
-      const rank = (s?: string) => ['paved', 'asphalt', 'gravel', 'compacted', 'unpaved', 'dirt', 'earth'].indexOf(s?.toLowerCase() ?? '') 
-      return rank(cur.tags?.surface) > rank(prev.tags?.surface) ? cur : prev
-    })
-    return {
-      surface:   worst.tags?.surface,
-      smoothness: worst.tags?.smoothness,
-      name:      worst.tags?.name,
-    }
-  } catch {
-    return null
-  }
-}
-
-function osmSmoothnessToCondition(s: string): 'excellent' | 'good' | 'rough' | 'very_rough' | 'unknown' {
-  switch (s.toLowerCase()) {
-    case 'excellent':  return 'excellent'
-    case 'good':       return 'good'
-    case 'intermediate': return 'good'
-    case 'bad':        return 'rough'
-    case 'very_bad':   return 'very_rough'
-    case 'horrible':   return 'very_rough'
-    default:           return 'unknown'
   }
 }
 

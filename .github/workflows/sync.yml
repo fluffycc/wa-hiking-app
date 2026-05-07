@@ -1,12 +1,9 @@
 name: Sync Trail Data
 
 on:
-  # Weekly full sync — trails + road conditions from OSM, DNR, WA Parks
   schedule:
-    - cron: '0 8 * * 1'   # Every Monday 8am UTC
-  # Conditions-only sync every 6 hours
+    - cron: '0 8 * * 1'
     - cron: '0 */6 * * *'
-  # Allow manual trigger from GitHub Actions UI
   workflow_dispatch:
     inputs:
       sync_type:
@@ -14,83 +11,83 @@ on:
         required: true
         default: 'conditions'
         type: choice
-        options:
-          - conditions
-          - osm
-          - wadnr
-          - waparks
-          - all
+        options: [conditions, osm, wadnr, waparks, all]
 
 jobs:
-  # ── Conditions sync (NOAA + WSDOT) — runs every 6h ────────────────────────
   sync-conditions:
     name: Sync Conditions (NOAA + WSDOT)
     runs-on: ubuntu-latest
     if: |
       github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' && 
+      (github.event_name == 'workflow_dispatch' &&
        (inputs.sync_type == 'conditions' || inputs.sync_type == 'all'))
     steps:
       - name: Trigger conditions sync
         run: |
-          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync/conditions" \
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "${{ secrets.SWA_API_URL }}/api/sync-conditions" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --fail --retry 3 --retry-delay 10
-          echo "Conditions sync triggered"
+            -H "Content-Type: application/json")
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          STATUS=$(echo "$RESPONSE" | tail -1 | cut -d: -f2)
+          echo "Status: $STATUS | Body: $BODY"
+          [ "$STATUS" = "200" ] || exit 1
 
-  # ── OSM trail sync — weekly only ──────────────────────────────────────────
   sync-osm:
     name: Sync OSM Trails
     runs-on: ubuntu-latest
     if: |
       (github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1') ||
-      (github.event_name == 'workflow_dispatch' && 
+      (github.event_name == 'workflow_dispatch' &&
        (inputs.sync_type == 'osm' || inputs.sync_type == 'all'))
     steps:
       - name: Trigger OSM sync
         run: |
-          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync/osm" \
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "${{ secrets.SWA_API_URL }}/api/sync-osm" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --fail --retry 3 --retry-delay 30 \
-            --max-time 600
-          echo "OSM sync triggered"
+            -H "Content-Type: application/json" --max-time 600)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          STATUS=$(echo "$RESPONSE" | tail -1 | cut -d: -f2)
+          echo "Status: $STATUS | Body: $BODY"
+          [ "$STATUS" = "200" ] || exit 1
 
-  # ── WA DNR sync — weekly only ─────────────────────────────────────────────
   sync-wadnr:
     name: Sync WA DNR Trails
     runs-on: ubuntu-latest
     needs: sync-osm
     if: |
       (github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1') ||
-      (github.event_name == 'workflow_dispatch' && 
+      (github.event_name == 'workflow_dispatch' &&
        (inputs.sync_type == 'wadnr' || inputs.sync_type == 'all'))
     steps:
       - name: Trigger WA DNR sync
         run: |
-          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync/wadnr" \
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "${{ secrets.SWA_API_URL }}/api/sync-wadnr" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --fail --retry 3 --retry-delay 10 \
-            --max-time 300
-          echo "WA DNR sync triggered"
+            -H "Content-Type: application/json" --max-time 300)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          STATUS=$(echo "$RESPONSE" | tail -1 | cut -d: -f2)
+          echo "Status: $STATUS | Body: $BODY"
+          [ "$STATUS" = "200" ] || exit 1
 
-  # ── WA State Parks sync — weekly only ────────────────────────────────────
   sync-waparks:
     name: Sync WA State Parks
     runs-on: ubuntu-latest
     needs: sync-wadnr
     if: |
       (github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1') ||
-      (github.event_name == 'workflow_dispatch' && 
+      (github.event_name == 'workflow_dispatch' &&
        (inputs.sync_type == 'waparks' || inputs.sync_type == 'all'))
     steps:
       - name: Trigger WA Parks sync
         run: |
-          curl -X POST "${{ secrets.SWA_API_URL }}/api/sync/waparks" \
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "${{ secrets.SWA_API_URL }}/api/sync-waparks" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            --fail --retry 3 --retry-delay 10 \
-            --max-time 300
-          echo "WA Parks sync triggered"
+            -H "Content-Type: application/json" --max-time 300)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          STATUS=$(echo "$RESPONSE" | tail -1 | cut -d: -f2)
+          echo "Status: $STATUS | Body: $BODY"
+          [ "$STATUS" = "200" ] || exit 1
