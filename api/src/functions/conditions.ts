@@ -69,78 +69,154 @@ async function getWSDOTPasses(): Promise<Map<string, string>> {
   return alerts
 }
 
-async function conditionsSyncHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-  if (!validateSyncToken(req)) return { status: 401, jsonBody: { error: 'Unauthorized' } }
+async function conditionsSyncHandler(
+  req: HttpRequest,
+  context: InvocationContext
+): Promise<HttpResponseInit> {
 
-  context.log('Starting conditions sync (NOAA + WSDOT)...')
-
-  // 1. Get NOAA forecast per region in parallel
-  const forecasts = new Map<string, NOAAForecastPeriod[]>()
-  await Promise.all(
-    Object.entries(REGION_SAMPLES).map(async ([region, sample]) => {
-      const periods = await getNOAAForecast(sample.lat, sample.lng)
-      if (periods) forecasts.set(region, periods)
-      context.log(`NOAA ${region}: ${periods ? 'ok' : 'failed'}`)
-    })
-  )
-
-  // 2. Get WSDOT pass closures
-  const passAlerts = await getWSDOTPasses()
-  context.log(`WSDOT: ${passAlerts.size} active alerts`)
-
-  // 3. Update all trails in Cosmos DB
-  const container = getTrailsContainer()
-  let updated = 0
-
-  for (const [region, sample] of Object.entries(REGION_SAMPLES)) {
-    const periods = forecasts.get(region)
-    if (!periods) continue
-
-    // Query all trails in this region
-    const { resources: trails } = await container.items.query(
-      { query: 'SELECT * FROM t WHERE t.region = @r', parameters: [{ name: '@r', value: region }] },
-      { enableCrossPartitionQuery: true }
-    ).fetchAll()
-
-    for (const trail of trails) {
-      const trailheadElev = trail.trailheadElevationFt ?? sample.elevFt
-      const summitElev = trailheadElev + (trail.elevationGainFt ?? 0)
-      const derived = deriveConditions(periods, trailheadElev, summitElev)
-
-      // Check if any WSDOT pass alert affects this trail
-      const trailAlerts = []
-      for (const [passName, alertMsg] of passAlerts) {
-        if (trail.name?.toLowerCase().includes(passName) ||
-            trail.region?.toLowerCase().includes(passName.split(' ')[0])) {
-          trailAlerts.push({
-            type: 'warning' as const,
-            message: alertMsg,
-            source: 'WSDOT',
-            reportedISO: new Date().toISOString(),
-          })
-        }
-      }
-
-      await container.items.upsert({
-        ...trail,
-        conditions: {
-          ...trail.conditions,
-          overall:        derived.overall,
-          snow:           derived.snow,
-          mud:            derived.mud,
-          bugs:           derived.bugs,
-          weatherHint:    derived.weatherHint,
-          notes:          derived.notes,
-          lastUpdatedISO: derived.lastUpdatedISO,
-        },
-        alerts: trailAlerts.length ? trailAlerts : trail.alerts ?? [],
-      })
-      updated++
+  if (!validateSyncToken(req)) {
+    return {
+      status: 401,
+      jsonBody: { error: 'Unauthorized' },
     }
   }
 
-  context.log(`Conditions sync complete: ${updated} trails updated`)
-  return { status: 200, jsonBody: { ok: true, updated, regions: forecasts.size, wsdotAlerts: passAlerts.size } }
+  try {
+    context.log('Starting conditions sync (NOAA + WSDOT)...')
+
+    // Validate required env vars early
+    const requiredEnv = [
+      'SYNC_SECRET_TOKEN',
+      'COSMOS_ENDPOINT',
+      'COSMOS_KEY',
+      'COSMOS_DATABASE',
+      'COSMOS_CONTAINER',
+    ]
+
+    const missing = requiredEnv.filter(k => !process.env[k])
+
+    if (missing.length > 0) {
+      context.error(`Missing env vars: ${missing.join(', ')}`)
+
+      return {
+        status: 500,
+        jsonBody: {
+          ok: false,
+          error: 'Server misconfiguration',
+          missing,
+        },
+      }
+    }
+
+    // 1. NOAA forecasts
+    const forecasts = new Map<string, NOAAForecastPeriod[]>()
+
+    await Promise.all(
+      Object.entries(REGION_SAMPLES).map(async ([region, sample]) => {
+        const periods = await getNOAAForecast(sample.lat, sample.lng)
+
+        if (periods) forecasts.set(region, periods)
+
+        context.log(`NOAA ${region}: ${periods ? 'ok' : 'failed'}`)
+      })
+    )
+
+    // 2. WSDOT alerts
+    const passAlerts = await getWSDOTPasses()
+
+    context.log(`WSDOT: ${passAlerts.size} active alerts`)
+
+    // 3. Cosmos init
+    const container = getTrailsContainer()
+
+    let updated = 0
+
+    for (const [region, sample] of Object.entries(REGION_SAMPLES)) {
+      const periods = forecasts.get(region)
+
+      if (!periods) continue
+
+      const { resources: trails } = await container.items.query(
+        {
+          query: 'SELECT * FROM t WHERE t.region = @r',
+          parameters: [{ name: '@r', value: region }],
+        },
+        { enableCrossPartitionQuery: true }
+      ).fetchAll()
+
+      for (const trail of trails) {
+        const trailheadElev =
+          trail.trailheadElevationFt ?? sample.elevFt
+
+        const summitElev =
+          trailheadElev + (trail.elevationGainFt ?? 0)
+
+        const derived = deriveConditions(
+          periods,
+          trailheadElev,
+          summitElev
+        )
+
+        const trailAlerts = []
+
+        for (const [passName, alertMsg] of passAlerts) {
+          if (
+            trail.name?.toLowerCase().includes(passName) ||
+            trail.region?.toLowerCase().includes(passName.split(' ')[0])
+          ) {
+            trailAlerts.push({
+              type: 'warning' as const,
+              message: alertMsg,
+              source: 'WSDOT',
+              reportedISO: new Date().toISOString(),
+            })
+          }
+        }
+
+        await container.items.upsert({
+          ...trail,
+          conditions: {
+            ...trail.conditions,
+            overall: derived.overall,
+            snow: derived.snow,
+            mud: derived.mud,
+            bugs: derived.bugs,
+            weatherHint: derived.weatherHint,
+            notes: derived.notes,
+            lastUpdatedISO: derived.lastUpdatedISO,
+          },
+          alerts: trailAlerts.length
+            ? trailAlerts
+            : trail.alerts ?? [],
+        })
+
+        updated++
+      }
+    }
+
+    context.log(`Conditions sync complete: ${updated} trails updated`)
+
+    return {
+      status: 200,
+      jsonBody: {
+        ok: true,
+        updated,
+        regions: forecasts.size,
+        wsdotAlerts: passAlerts.size,
+      },
+    }
+
+  } catch (err) {
+    context.error('Conditions sync failed:', err)
+
+    return {
+      status: 500,
+      jsonBody: {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    }
+  }
 }
 
 app.http('sync-conditions', {
