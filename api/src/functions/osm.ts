@@ -101,7 +101,13 @@ async function osmSyncHandler(
 
     const container = safeGetContainer(context)
 
-    const data = await queryOverpass(OSM_WAYS_QUERY)
+    let data
+    try {
+      data = await queryOverpass(OSM_WAYS_QUERY)
+    } catch (e) {
+      context.error('Overpass failed completely:', e)
+      throw new Error('OVERPASS_FAILED')
+    }
 
     const ways = (data.elements ?? []).filter(
       e => e.type === 'way' && e.center && e.tags?.name
