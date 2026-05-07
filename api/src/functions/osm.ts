@@ -39,13 +39,30 @@ function validateSyncToken(req: HttpRequest): boolean {
   return token === process.env['SYNC_SECRET_TOKEN']
 }
 
+/** Safe Cosmos init so it NEVER crashes handler silently */
+function safeGetContainer(context: InvocationContext) {
+  try {
+    return getTrailsContainer()
+  } catch (e) {
+    context.error('Cosmos init failed:', e)
+    throw new Error(
+      'COSMOS_INIT_FAILED: check COSMOS_ENDPOINT / KEY / DB / CONTAINER env vars'
+    )
+  }
+}
+
+/** Overpass with timeout + fallback */
 async function queryOverpass(query: string): Promise<{ elements: OsmElement[] }> {
   let lastError = ''
 
   for (const url of OVERPASS_INSTANCES) {
     try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 30000)
+
       const res = await fetch(url, {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'User-Agent': USER_AGENT,
@@ -53,14 +70,17 @@ async function queryOverpass(query: string): Promise<{ elements: OsmElement[] }>
         body: `data=${encodeURIComponent(query)}`,
       })
 
+      clearTimeout(timeout)
+
       if (!res.ok) {
         lastError = `${url} -> ${res.status}`
         continue
       }
 
-      return await res.json() as { elements: OsmElement[] }
+      const json = await res.json()
+      return json as { elements: OsmElement[] }
     } catch (e) {
-      lastError = `${url} failed`
+      lastError = `${url} failed: ${String(e)}`
     }
   }
 
@@ -76,11 +96,10 @@ async function osmSyncHandler(
     return { status: 401, jsonBody: { ok: false, error: 'Unauthorized' } }
   }
 
-  let upserted = 0
-  let errors = 0
-
   try {
     context.log('Starting OSM sync...')
+
+    const container = safeGetContainer(context)
 
     const data = await queryOverpass(OSM_WAYS_QUERY)
 
@@ -90,9 +109,9 @@ async function osmSyncHandler(
 
     context.log(`OSM ways found: ${ways.length}`)
 
-    const container = getTrailsContainer()
+    let upserted = 0
+    let errors = 0
 
-    // ⚠️ IMPORTANT: avoid Promise.all overload
     const BATCH_SIZE = 10
 
     for (let i = 0; i < ways.length; i += BATCH_SIZE) {
@@ -100,15 +119,19 @@ async function osmSyncHandler(
 
       for (const way of batch) {
         try {
-          const tags = way.tags!
-          const lat = way.center!.lat
-          const lng = way.center!.lon
+          const tags = way.tags
+          const center = way.center
+
+          if (!tags?.name || !center) continue
+
+          const lat = center.lat
+          const lng = center.lon
 
           const region = regionFromLatLng(lat, lng)
-          const owner = operatorToLandOwner(tags['operator'])
+          const owner = operatorToLandOwner(tags.operator)
 
-          const miles = tags['distance']
-            ? metersToMiles(parseFloat(tags['distance']) * 1000)
+          const miles = tags.distance
+            ? metersToMiles(parseFloat(tags.distance) * 1000)
             : 3.0
 
           await container.items.upsert({
@@ -116,7 +139,7 @@ async function osmSyncHandler(
             pk: region,
 
             osmId: String(way.id),
-            name: cleanName(tags['name']),
+            name: cleanName(tags.name),
             region,
 
             lat,
@@ -125,7 +148,7 @@ async function osmSyncHandler(
             miles,
             elevationGainFt: 0,
 
-            difficulty: osmSacScaleToDifficulty(tags['sac_scale'] ?? 'hiking'),
+            difficulty: osmSacScaleToDifficulty(tags.sac_scale ?? 'hiking'),
             routeType: 'OutAndBack',
 
             landOwner: owner,
@@ -155,33 +178,22 @@ async function osmSyncHandler(
           upserted++
         } catch (e) {
           errors++
-          context.warn(
-            `OSM upsert failed for ${way.id}: ${
-              e instanceof Error ? e.message : String(e)
-            }`
-          )
+          context.warn(`OSM upsert failed (way ${way.id}): ${String(e)}`)
         }
       }
 
-      // throttle between batches (CRITICAL for Azure + Overpass)
       await new Promise(r => setTimeout(r, 1500))
     }
 
+    context.log(`OSM sync complete: ${upserted} ok, ${errors} errors`)
+
     return {
       status: 200,
-      jsonBody: {
-        ok: true,
-        upserted,
-        errors,
-      },
+      jsonBody: { ok: true, upserted, errors },
     }
 
   } catch (err) {
-    context.error(
-      `OSM sync fatal error: ${
-        err instanceof Error ? err.message : String(err)
-      }`
-    )
+    context.error('OSM sync fatal:', err)
 
     return {
       status: 500,
