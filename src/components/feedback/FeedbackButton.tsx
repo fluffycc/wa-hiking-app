@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { buildFeedbackPayload, submitFeedback } from '../../services/feedbackClient'
 import { useUiStore } from '../../state/useUiStore'
 import type { FeedbackType } from '../../domain/types'
@@ -32,10 +33,10 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-3xl w-full max-w-md shadow-2xl">
+  const modal = (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '16px' }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} onClick={onClose} />
+      <div style={{ position: 'relative', background: 'white', borderRadius: '24px', width: '100%', maxWidth: '28rem', boxShadow: '0 25px 50px rgba(0,0,0,0.25)' }}>
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <h3 className="font-display font-bold text-trail-dark text-lg">Send Feedback</h3>
           <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200">✕</button>
@@ -49,9 +50,7 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
               <a href={issueUrl} target="_blank" rel="noopener noreferrer"
                 className="text-sm text-trail-green underline break-all">View issue on GitHub →</a>
             )}
-            <button onClick={onClose} className="mt-4 w-full bg-trail-green text-white rounded-2xl py-3 font-display font-semibold">
-              Done
-            </button>
+            <button onClick={onClose} className="mt-4 w-full bg-trail-green text-white rounded-2xl py-3 font-display font-semibold">Done</button>
           </div>
         ) : (
           <div className="p-5 space-y-4">
@@ -67,21 +66,16 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
             </div>
             <div>
               <label className="text-sm font-body font-medium text-trail-dark block mb-1.5">Message <span className="text-red-500">*</span></label>
-              <textarea
-                value={message} onChange={e => setMessage(e.target.value)}
+              <textarea value={message} onChange={e => setMessage(e.target.value)}
                 placeholder="Describe the issue or idea..."
                 rows={4}
-                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:ring-2 focus:ring-trail-green/30 resize-none"
-              />
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:ring-2 focus:ring-trail-green/30 resize-none" />
             </div>
             {status === 'error' && (
               <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">⚠️ {errorMsg}</p>
             )}
-            <button
-              onClick={submit}
-              disabled={!message.trim() || status === 'submitting'}
-              className="w-full bg-trail-green text-white font-display font-semibold rounded-2xl py-3.5 disabled:opacity-50 hover:bg-trail-dark transition-colors"
-            >
+            <button onClick={submit} disabled={!message.trim() || status === 'submitting'}
+              className="w-full bg-trail-green text-white font-display font-semibold rounded-2xl py-3.5 disabled:opacity-50 hover:bg-trail-dark transition-colors">
               {status === 'submitting' ? '⏳ Sending…' : 'Send Feedback'}
             </button>
           </div>
@@ -89,19 +83,25 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
       </div>
     </div>
   )
+
+  return createPortal(modal, document.body)
 }
 
 export function FeedbackButton() {
   const [open, setOpen] = useState(false)
-  return (
+
+  const button = (
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-20 right-4 z-[60] bg-trail-dark text-white font-body font-medium text-sm rounded-full px-4 py-2.5 shadow-lg hover:bg-trail-green transition-colors flex items-center gap-1.5"
+        style={{ position: 'fixed', bottom: '80px', right: '16px', zIndex: 9998 }}
+        className="bg-trail-dark text-white font-body font-medium text-sm rounded-full px-4 py-2.5 shadow-lg hover:bg-trail-green transition-colors flex items-center gap-1.5"
       >
         💬 Feedback
       </button>
       {open && <FeedbackModal onClose={() => setOpen(false)} />}
     </>
   )
+
+  return createPortal(button, document.body)
 }

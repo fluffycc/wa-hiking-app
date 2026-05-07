@@ -29,6 +29,7 @@ export interface Trail {
   lng: number
   miles: number
   elevationGainFt: number
+  trailheadElevationFt?: number
   difficulty: Difficulty
   routeType: RouteType
   landOwner: LandOwner
@@ -51,7 +52,45 @@ export interface Trail {
     lastUpdatedISO?: string
     notes: string[]
   }
+  // New fields from data pipeline
+  roadCondition?: RoadCondition
+  alerts?: TrailAlert[]
+  source?: DataSource
+  osmId?: string
+  photos?: string[]
+  description?: string
 }
+
+// ─── Feedback ────────────────────────────────────────────────────────────────
+
+// ─── Road Condition (from OSM + WA DNR forest roads) ─────────────────────────
+
+export type RoadSurface   = 'paved' | 'gravel' | 'dirt' | 'unknown'
+export type RoadConditionRating = 'excellent' | 'good' | 'rough' | 'very_rough' | 'unknown'
+
+export interface RoadCondition {
+  surface:    RoadSurface
+  condition:  RoadConditionRating
+  notes?:     string
+  confidence: Confidence
+  lastUpdatedISO?: string
+  /** WA DNR maintenance level 1-5 if available */
+  dnrMaintenanceLevel?: 1 | 2 | 3 | 4 | 5
+}
+
+// ─── Trail alerts (road closures, fire, etc.) ────────────────────────────────
+
+export interface TrailAlert {
+  type:       'closure' | 'warning' | 'info'
+  message:    string
+  source:     string
+  expiresISO?: string
+  reportedISO: string
+}
+
+// ─── Source tracking ─────────────────────────────────────────────────────────
+
+export type DataSource = 'osm' | 'wadnr' | 'wa_parks' | 'ridb' | 'manual'
 
 // ─── Feedback ────────────────────────────────────────────────────────────────
 

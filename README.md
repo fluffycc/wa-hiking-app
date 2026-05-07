@@ -1,49 +1,69 @@
 # WA Trail Finder
 
-A mobile-first web app for finding Washington State hiking trails.
+Mobile-first WA hiking app with live trail data from OSM, WA DNR, WA State Parks, and NOAA — all free.
 
-## Quick Start
-
+## Quick Start (local, sample data)
 ```bash
-npm install
-npm run dev
+npm install && npm run dev
 ```
 
-Open http://localhost:5173
+## Full Setup (1000+ live trails)
 
-## Full Stack (with /api/feedback)
+### 1. Azure Cosmos DB (free serverless tier)
+- portal.azure.com → Cosmos DB → Create → NoSQL → Serverless
+- Create database `wa-hiking`, container `trails`, partition key `/pk`
+- Copy URI and Primary Key
 
+### 2. Fill in `.env.local` (copy from `.env.example`)
+
+### 3. Run locally with API
 ```bash
 npm install -g @azure/static-web-apps-cli
-cp .env.example .env.local   # fill in your GitHub secrets
 swa start http://localhost:5173 --api-location api
 ```
 
-## GitHub Secrets Required (for Feedback feature)
+### 4. Populate database (run once)
+```bash
+curl -X POST http://localhost:7071/api/sync-osm    -H "x-sync-token: YOUR_TOKEN"
+curl -X POST http://localhost:7071/api/sync-wadnr  -H "x-sync-token: YOUR_TOKEN"
+curl -X POST http://localhost:7071/api/sync-waparks -H "x-sync-token: YOUR_TOKEN"
+curl -X POST http://localhost:7071/api/sync-conditions -H "x-sync-token: YOUR_TOKEN"
+```
 
-| Variable | Description |
+## Deploy to Azure SWA
+
+Add these Application Settings in Azure Portal → your SWA → Configuration:
+
+| Key | Value |
 |---|---|
-| `GITHUB_TOKEN` | Personal access token with `repo` scope |
-| `GITHUB_OWNER` | Your GitHub username |
-| `GITHUB_REPO` | Repo name where issues will be created |
-| `GITHUB_LABELS` | Comma-separated labels (e.g. `feedback,from-app`) |
+| COSMOS_ENDPOINT | https://YOUR_ACCOUNT.documents.azure.com:443/ |
+| COSMOS_KEY | your primary key |
+| COSMOS_DB_NAME | wa-hiking |
+| COSMOS_CONTAINER | trails |
+| SYNC_SECRET_TOKEN | random secret (openssl rand -hex 32) |
+| WSDOT_ACCESS_CODE | free key from wsdot.wa.gov/traffic/api |
+| GITHUB_TOKEN | PAT with repo scope |
+| GITHUB_OWNER | your github username |
+| GITHUB_REPO | wa-hiking-app |
+| GITHUB_LABELS | feedback,from-app |
 
-## Deploy to Azure Static Web Apps
+Add these GitHub Actions secrets (repo → Settings → Secrets):
 
-1. Push this repo to GitHub
-2. In the Azure Portal → Create a resource → Static Web App
-3. Connect your GitHub repo
-4. Build settings: App location `/`, Output location `dist`, API location `api`
-5. Add the GitHub secrets above as Application Settings in the Azure portal
+| Key | Value |
+|---|---|
+| SWA_API_URL | https://your-app.azurestaticapps.net |
+| SYNC_SECRET_TOKEN | same as above |
 
-## Run Tests
+Then run: **GitHub → Actions → Sync Trail Data → Run workflow → all**
 
-```bash
-npx vitest
-```
+After that, syncs run automatically: trail data weekly, conditions every 6h.
 
-## Type Check
+## Data sources (all 100% free)
 
-```bash
-npm run typecheck
-```
+| Source | Data | Auth |
+|---|---|---|
+| OpenStreetMap Overpass | 3000+ WA trails, road surfaces near trailheads | None |
+| WA DNR GIS REST API | Official WA trails, forest road maintenance levels 1-5 | None |
+| WA State Parks Socrata | State park trails, Discover Pass info | None |
+| NOAA Weather API | Snow level, rain, temperature by region | None |
+| WSDOT Pass Conditions | Mountain pass closures, travel advisories | Free key |

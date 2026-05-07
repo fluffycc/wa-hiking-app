@@ -4,9 +4,11 @@
   "description": "Azure Functions API for WA Hiking App",
   "main": "feedback/index.js",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "start": "func start"
   },
   "dependencies": {
+    "@azure/cosmos": "^4.1.1",
     "@azure/functions": "^4.5.0"
   },
   "devDependencies": {
