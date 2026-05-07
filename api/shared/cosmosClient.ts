@@ -9,7 +9,7 @@ function getClient(): Database {
   const key = process.env['COSMOS_KEY']
   if (!endpoint || !key) throw new Error('Missing COSMOS_ENDPOINT or COSMOS_KEY env vars')
   const client = new CosmosClient({ endpoint, key })
-  _db = client.database(process.env['COSMOS_DB_NAME'] ?? 'wa-hiking')
+  _db = client.database(process.env['COSMOS_DATABASE'] ?? 'wa-hiking')
   return _db
 }
 
