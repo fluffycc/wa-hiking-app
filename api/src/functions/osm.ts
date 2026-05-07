@@ -31,6 +31,20 @@ interface OsmElement {
   tags?: Record<string, string>
 }
 
+/**
+ * CLEAN fetch (NO AbortController injection, avoids SWA crash cases)
+ */
+async function safeFetch(url: string, body: string): Promise<Response> {
+  return fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'User-Agent': USER_AGENT,
+    },
+    body,
+  })
+}
+
 function validateSyncToken(req: HttpRequest): boolean {
   const token =
     req.headers.get('x-sync-token') ??
@@ -39,46 +53,41 @@ function validateSyncToken(req: HttpRequest): boolean {
   return token === process.env['SYNC_SECRET_TOKEN']
 }
 
-/** Safe Cosmos init so it NEVER crashes handler silently */
 function safeGetContainer(context: InvocationContext) {
   try {
     return getTrailsContainer()
   } catch (e) {
     context.error('Cosmos init failed:', e)
-    throw new Error(
-      'COSMOS_INIT_FAILED: check COSMOS_ENDPOINT / KEY / DB / CONTAINER env vars'
-    )
+    throw new Error('COSMOS_INIT_FAILED')
   }
 }
 
-/** Overpass with timeout + fallback */
 async function queryOverpass(query: string): Promise<{ elements: OsmElement[] }> {
   let lastError = ''
 
   for (const url of OVERPASS_INSTANCES) {
     try {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 30000)
-
-      const res = await fetch(url, {
-        method: 'POST',
-        signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'User-Agent': USER_AGENT,
-        },
-        body: `data=${encodeURIComponent(query)}`,
-      })
-
-      clearTimeout(timeout)
+      const res = await safeFetch(url, `data=${encodeURIComponent(query)}`)
 
       if (!res.ok) {
         lastError = `${url} -> ${res.status}`
         continue
       }
 
-      const json = await res.json()
-      return json as { elements: OsmElement[] }
+      const text = await res.text()
+
+      if (!text || text.length < 10) {
+        lastError = `${url} returned empty response`
+        continue
+      }
+
+      try {
+        return JSON.parse(text) as { elements: OsmElement[] }
+      } catch {
+        lastError = `${url} invalid JSON: ${text.slice(0, 150)}`
+        continue
+      }
+
     } catch (e) {
       lastError = `${url} failed: ${String(e)}`
     }
@@ -87,11 +96,7 @@ async function queryOverpass(query: string): Promise<{ elements: OsmElement[] }>
   throw new Error(`All Overpass instances failed: ${lastError}`)
 }
 
-async function osmSyncHandler(
-  req: HttpRequest,
-  context: InvocationContext
-): Promise<HttpResponseInit> {
-
+async function osmSyncHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   if (!validateSyncToken(req)) {
     return { status: 401, jsonBody: { ok: false, error: 'Unauthorized' } }
   }
@@ -101,13 +106,7 @@ async function osmSyncHandler(
 
     const container = safeGetContainer(context)
 
-    let data
-    try {
-      data = await queryOverpass(OSM_WAYS_QUERY)
-    } catch (e) {
-      context.error('Overpass failed completely:', e)
-      throw new Error('OVERPASS_FAILED')
-    }
+    const data = await queryOverpass(OSM_WAYS_QUERY)
 
     const ways = (data.elements ?? []).filter(
       e => e.type === 'way' && e.center && e.tags?.name
@@ -184,14 +183,12 @@ async function osmSyncHandler(
           upserted++
         } catch (e) {
           errors++
-          context.warn(`OSM upsert failed (way ${way.id}): ${String(e)}`)
+          context.warn(`OSM upsert failed ${way.id}: ${String(e)}`)
         }
       }
 
       await new Promise(r => setTimeout(r, 1500))
     }
-
-    context.log(`OSM sync complete: ${upserted} ok, ${errors} errors`)
 
     return {
       status: 200,
@@ -201,7 +198,7 @@ async function osmSyncHandler(
   } catch (err) {
     const error = err instanceof Error ? err : new Error(String(err))
 
-    context.error('❌ OSM SYNC FATAL ERROR')
+    context.error('❌ OSM SYNC FAILED')
     context.error(error.message)
     context.error(error.stack)
 
@@ -210,7 +207,6 @@ async function osmSyncHandler(
       jsonBody: {
         ok: false,
         error: error.message,
-        stack: error.stack,
       },
     }
   }
