@@ -10,7 +10,6 @@ const PIN_COLORS = {
   go: '#22c55e',
   caution: '#f59e0b',
   closed: '#ef4444',
-  unknown: '#9ca3af',
 }
 
 function createPinIcon(color: string, selected: boolean) {
@@ -39,10 +38,6 @@ function textSuggestsClosure(value?: string): boolean {
   return !!value && /\b(closed|closure|impassable|not accessible|no access|blocked)\b/i.test(value)
 }
 
-function textSuggestsRoadCaution(value?: string): boolean {
-  return !!value && /\b(rough|pothole|rutted|washout|washed out|high clearance|4x4|chains|advisory)\b/i.test(value)
-}
-
 function trailHasClosure(trail: Trail): boolean {
   const activeAlerts = trail.alerts?.filter(alertIsActive) ?? []
 
@@ -54,29 +49,19 @@ function trailHasClosure(trail: Trail): boolean {
   )
 }
 
-function trailHasCaution(trail: Trail): boolean {
-  const activeAlerts = trail.alerts?.filter(alertIsActive) ?? []
-  const roadCondition = trail.roadCondition?.condition
-
+function trailHasConditionCaution(trail: Trail): boolean {
   return (
     trail.conditions.overall === 'caution' ||
     trail.conditions.overall === 'avoid' ||
     trail.conditions.snow !== 'none' ||
-    trail.conditions.mud === 'heavy' ||
-    ['rough', 'high_clearance', '4x4_only'].includes(trail.access.level) ||
-    roadCondition === 'rough' ||
-    roadCondition === 'very_rough' ||
-    textSuggestsRoadCaution(trail.access.notes) ||
-    textSuggestsRoadCaution(trail.roadCondition?.notes) ||
-    activeAlerts.some(alert => alert.type === 'warning' || textSuggestsRoadCaution(alert.message))
+    trail.conditions.mud === 'heavy'
   )
 }
 
 function getPinColor(trail: Trail): string {
   if (trailHasClosure(trail)) return PIN_COLORS.closed
-  if (trailHasCaution(trail)) return PIN_COLORS.caution
-  if (trail.conditions.overall === 'go') return PIN_COLORS.go
-  return PIN_COLORS.unknown
+  if (trailHasConditionCaution(trail)) return PIN_COLORS.caution
+  return PIN_COLORS.go
 }
 
 function RecenterMap({ trail }: { trail: Trail | null }) {
@@ -101,18 +86,31 @@ function ViewportTrailLoader() {
   const map = useMap()
   const loadTrails = useTrailStore(s => s.loadTrails)
   const timerRef = useRef<number | null>(null)
+  const lastViewportKeyRef = useRef<string | null>(null)
 
   const loadCurrentBounds = useCallback(() => {
     if (timerRef.current) window.clearTimeout(timerRef.current)
 
     timerRef.current = window.setTimeout(() => {
       const bounds = map.getBounds()
-      void loadTrails({
-        north: bounds.getNorth(),
-        south: bounds.getSouth(),
-        east:  bounds.getEast(),
-        west:  bounds.getWest(),
-      })
+      const nextBounds = {
+        north: Number(bounds.getNorth().toFixed(3)),
+        south: Number(bounds.getSouth().toFixed(3)),
+        east:  Number(bounds.getEast().toFixed(3)),
+        west:  Number(bounds.getWest().toFixed(3)),
+      }
+      const viewportKey = [
+        map.getZoom(),
+        nextBounds.north,
+        nextBounds.south,
+        nextBounds.east,
+        nextBounds.west,
+      ].join(':')
+
+      if (lastViewportKeyRef.current === viewportKey) return
+      lastViewportKeyRef.current = viewportKey
+
+      void loadTrails(nextBounds)
     }, 250)
   }, [loadTrails, map])
 

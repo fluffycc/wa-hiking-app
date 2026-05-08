@@ -39,6 +39,15 @@ function deriveFiltered(trails: Trail[], query: string, filters: FilterState, so
   return sortTrails(filterTrails(searchTrails(trails, query), filters), sort)
 }
 
+function trailIsWithinBounds(trail: Trail, bounds: TrailBounds): boolean {
+  return (
+    trail.lat >= bounds.south &&
+    trail.lat <= bounds.north &&
+    trail.lng >= bounds.west &&
+    trail.lng <= bounds.east
+  )
+}
+
 export const useTrailStore = create<TrailStore>((set, get) => ({
   trails: [], loading: false, error: null,
   searchQuery: '', sortKey: 'relevance',
@@ -73,8 +82,15 @@ export const useTrailStore = create<TrailStore>((set, get) => ({
       const selectedTrail = selectedTrailId
         ? get().trails.find(t => t.id === selectedTrailId) ?? state.trails.find(t => t.id === selectedTrailId)
         : undefined
-      const trails = selectedTrail && !data.trails.some(t => t.id === selectedTrail.id)
-        ? [selectedTrail, ...data.trails].slice(0, VIEWPORT_TRAIL_LIMIT)
+      const selectedTrailInBounds = !!selectedTrail && (!nextBounds || trailIsWithinBounds(selectedTrail, nextBounds))
+      const trailToKeep = selectedTrailInBounds ? selectedTrail : undefined
+
+      if (selectedTrail && nextBounds && !selectedTrailInBounds) {
+        useUiStore.getState().setSelectedTrailId(null)
+      }
+
+      const trails = trailToKeep && !data.trails.some(t => t.id === trailToKeep.id)
+        ? [trailToKeep, ...data.trails].slice(0, VIEWPORT_TRAIL_LIMIT)
         : data.trails
       set({
         trails,

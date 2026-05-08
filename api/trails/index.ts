@@ -7,6 +7,7 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
   const limit  = Math.min(100, Math.max(1, parseInt(p['limit'] ?? '50')))
   const offset = (page - 1) * limit
   const fetchLimit = limit + 1
+  const hasBounds = !!(p['north'] && p['south'] && p['east'] && p['west'])
 
   const conditions: string[] = []
   const params: { name: string; value: unknown }[] = []
@@ -18,7 +19,7 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
     })
     conditions.push(`t.region IN (${regions.join(', ')})`)
   }
-  if (p['north'] && p['south'] && p['east'] && p['west']) {
+  if (hasBounds) {
     conditions.push('t.lat >= @south AND t.lat <= @north AND t.lng >= @west AND t.lng <= @east')
     params.push(
       { name: '@north', value: parseFloat(p['north']) },
@@ -52,13 +53,21 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
 
   try {
     const container = getTrailsContainer()
+    const useFastViewportQuery = hasBounds && offset === 0 && (p['sort'] ?? 'relevance') === 'relevance'
+    const query = useFastViewportQuery
+      ? `SELECT TOP ${fetchLimit} * FROM t ${where}`
+      : `SELECT * FROM t ${where} ORDER BY ${orderBy} OFFSET ${offset} LIMIT ${fetchLimit}`
     const dataRes = await container.items.query(
-      { query: `SELECT * FROM t ${where} ORDER BY ${orderBy} OFFSET ${offset} LIMIT ${fetchLimit}`, parameters: params },
+      { query, parameters: params },
       { enableCrossPartitionQuery: true }
     ).fetchAll()
     const trails = dataRes.resources.slice(0, limit)
     const hasMore = dataRes.resources.length > limit
-    return { status: 200, jsonBody: { trails, total: offset + trails.length, page, limit, hasMore } }
+    return {
+      status: 200,
+      headers: { 'Cache-Control': 'public, max-age=30' },
+      jsonBody: { trails, total: offset + trails.length, page, limit, hasMore },
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     context.error('GET /api/trails error', message)
