@@ -26,7 +26,7 @@ The app answers four practical questions:
 
 | Source | Used for | Auth |
 |---|---|---|
-| OpenStreetMap Overpass | Base trail records | None |
+| OpenStreetMap Overpass | Legacy broad trail fallback, manual only | None |
 | WA DNR GIS | WA DNR trails and forest road maintenance | None |
 | WA State Parks / wa.gov | State park trails and Discover Pass defaults | None |
 | NOAA Weather | Regional forecast snapshots overlaid on trails at read time | None |
@@ -99,14 +99,16 @@ Run from GitHub Actions: `Sync Trail Data`.
 
 Available manual modes:
 
-- `osm`: base OSM trails.
+- `osm`: legacy OSM fallback. Manual only, bounded, and skipped by default unless called with `force=true`.
 - `wadnr`: WA DNR trails and road maintenance data.
 - `waparks`: WA State Parks enrichment.
 - `wta`: incremental WTA parking/access enrichment.
 - `conditions`: NOAA and WSDOT warning refresh.
-- `all`: full pipeline.
+- `all`: normal pipeline: WA DNR, WA State Parks, WTA, then conditions.
 
-The scheduled workflow runs the full pipeline twice per day at `03:00` and `15:00` UTC, which is roughly evening and morning Pacific time depending on daylight saving time.
+The scheduled workflow runs the normal pipeline twice per day at `03:00` and `15:00` UTC, which is roughly evening and morning Pacific time depending on daylight saving time.
+
+OSM is intentionally not part of `all` or the scheduled workflow anymore. Overpass is slow and unreliable inside Azure Static Web Apps, and OSM trail records often have weak distance/difficulty/parking data. Existing OSM records can remain as fallback coverage, but WTA/DNR/Parks should be treated as the useful data path.
 
 WTA sync is intentionally incremental (`limit=20` in the workflow) because it reads public WTA pages through Azure Static Web Apps, which can fail long requests near the 45-second mark. It prioritizes trails missing WTA stats or permit data. WTA should overwrite broad OSM defaults for distance, elevation gain, difficulty, route type, and parking pass.
 

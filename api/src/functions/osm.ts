@@ -17,7 +17,10 @@ const OVERPASS_INSTANCES = [
 ]
 
 const USER_AGENT = 'WAHikingApp/1.0 (contact: you@example.com)'
-const FETCH_TIMEOUT_MS = 180_000
+const FETCH_TIMEOUT_MS = 20_000
+const MAX_RUN_MS = 35_000
+const DEFAULT_LIMIT = 250
+const MAX_LIMIT = 1000
 const UPSERT_BATCH_SIZE = 25
 
 const OSM_WAYS_QUERY = `
@@ -127,7 +130,7 @@ async function queryOverpass(
 
   let lastError = ''
 
-  for (const url of OVERPASS_INSTANCES) {
+  for (const url of OVERPASS_INSTANCES.slice(0, 1)) {
     try {
       return await safeFetch(url, `data=${encodeURIComponent(query)}`, context)
     } catch (e) {
@@ -158,6 +161,22 @@ async function osmSyncHandler(
     }
 
     const container = safeGetContainer(context)
+    const url = new URL(req.url)
+    const force = url.searchParams.get('force') === 'true'
+    const limitParam = Number(url.searchParams.get('limit') ?? DEFAULT_LIMIT)
+    const limit = Math.min(MAX_LIMIT, Math.max(1, Number.isFinite(limitParam) ? limitParam : DEFAULT_LIMIT))
+
+    if (!force) {
+      return {
+        status: 200,
+        jsonBody: {
+          ok: true,
+          skipped: true,
+          requestId,
+          reason: 'OSM sync is disabled by default because Overpass is slow and OSM trail stats are low-confidence. Use force=true for a bounded legacy refresh.',
+        },
+      }
+    }
 
     // optional Cosmos sanity check (non-fatal)
     try {
@@ -167,18 +186,43 @@ async function osmSyncHandler(
       context.error(`[OSM][${requestId}] Cosmos query failed`, e)
     }
 
-    const data = await queryOverpass(OSM_WAYS_QUERY, context)
+    let data: { elements: OsmElement[] }
+    try {
+      data = await queryOverpass(OSM_WAYS_QUERY, context)
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err))
+      context.warn(`[OSM][${requestId}] Overpass unavailable; skipping legacy sync`, error)
+
+      return {
+        status: 200,
+        jsonBody: {
+          ok: true,
+          skipped: true,
+          requestId,
+          reason: 'OVERPASS_UNAVAILABLE',
+          error: error.message,
+          durationMs: Date.now() - startTime,
+        },
+      }
+    }
 
     const ways = (data.elements ?? []).filter(
       e => e.type === 'way' && e.center && e.tags?.name
-    )
+    ).slice(0, limit)
 
     context.log(`[OSM][${requestId}] ways found: ${ways.length}`)
 
     let upserted = 0
     let errors = 0
 
-    await runInBatches(ways, UPSERT_BATCH_SIZE, async (way) => {
+    for (let i = 0; i < ways.length; i += UPSERT_BATCH_SIZE) {
+      if (Date.now() - startTime > MAX_RUN_MS) {
+        context.warn(`[OSM][${requestId}] stopping early to stay inside SWA timeout`)
+        break
+      }
+
+      const batch = ways.slice(i, i + UPSERT_BATCH_SIZE)
+      await Promise.all(batch.map(async (way) => {
         try {
           const tags = way.tags
           const center = way.center
@@ -241,7 +285,8 @@ async function osmSyncHandler(
           errors++
           context.warn(`[OSM][${requestId}] upsert failed`, e)
         }
-    })
+      }))
+    }
 
     const duration = Date.now() - startTime
     context.log(`[OSM][${requestId}] DONE in ${duration}ms`)
@@ -253,6 +298,7 @@ async function osmSyncHandler(
         requestId,
         upserted,
         errors,
+        limit,
         durationMs: duration,
       },
     }
