@@ -1,5 +1,6 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { getTrailsContainer } from '../../shared/cosmosClient'
+import { cleanName, regionFromLatLng } from '../../shared/trailMapper'
 
 const WTA_SEARCH_URL = 'https://www.wta.org/go-outside/hikes/hike_search'
 const WTA_HIKE_URL = 'https://www.wta.org/go-hiking/hikes'
@@ -10,11 +11,16 @@ const DETAIL_BATCH_SIZE = 1
 const MAX_RUN_MS = 25_000
 const USER_AGENT = 'WAHikingApp/1.0 (contact: you@example.com)'
 const textCache = new Map<string, string>()
+const DEFAULT_WTA_SEEDS = [
+  { name: 'Lake 22', url: 'https://www.wta.org/go-hiking/hikes/lake-22-lake-twenty-two' },
+  { name: 'Heather Lake', url: 'https://www.wta.org/go-hiking/hikes/heather-lake-1' },
+]
 
 type ParkingPassType = 'free' | 'discover_pass' | 'nw_forest_pass' | 'national_park_fee' | 'unknown'
 type AccessLevel = 'sedan_ok' | 'rough' | 'high_clearance' | '4x4_only' | 'unknown'
 type Difficulty = 'Easy' | 'Moderate' | 'Hard' | 'Strenuous'
 type RouteType = 'Loop' | 'OutAndBack' | 'PointToPoint'
+type LandOwner = 'DNR' | 'WDFW' | 'StateParks' | 'USFS' | 'NPS' | 'County' | 'City' | 'Other'
 
 interface TrailProjection {
   id: string
@@ -60,8 +66,12 @@ interface WTAEnrichment {
   roadNotes?: string
   miles?: number
   elevationGainFt?: number
+  trailheadElevationFt?: number
   difficulty?: Difficulty
   routeType?: RouteType
+  lat?: number
+  lng?: number
+  description?: string
   alert?: {
     type: 'closure' | 'warning'
     message: string
@@ -151,6 +161,8 @@ function normalizeName(value: string): string {
     .toLowerCase()
     .replace(/&/g, 'and')
     .replace(/\([^)]*\)/g, '')
+    .replace(/\btwenty two\b/g, '22')
+    .replace(/\btwenty[-\s]?two\b/g, '22')
     .replace(/\btrail\b/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
@@ -195,6 +207,14 @@ function extractPageTitle(html: string): string | undefined {
 
   const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
   return title ? stripTags(title).replace(/\s+[-\u2013\u2014]\s+Washington Trails Association$/i, '') : undefined
+}
+
+function extractMetaDescription(html: string): string | undefined {
+  const match =
+    html.match(/<meta[^>]+property="og:description"[^>]+content="([^"]+)"/i) ??
+    html.match(/<meta[^>]+name="description"[^>]+content="([^"]+)"/i)
+
+  return match?.[1] ? decodeHtml(match[1]).replace(/\s+/g, ' ').trim().slice(0, 500) : undefined
 }
 
 function extractSearchLinks(html: string): Array<{ url: string; name: string }> {
@@ -252,6 +272,21 @@ function extractParkingLabel(html: string): string | undefined {
   return label || undefined
 }
 
+function extractCoordinates(html: string): { lat: number; lng: number } | undefined {
+  const lat =
+    html.match(/"latitude"\s*:\s*"?(-?\d+(?:\.\d+)?)"?/i)?.[1] ??
+    html.match(/property="latitude"\s+content="([^"]+)"/i)?.[1]
+  const lng =
+    html.match(/"longitude"\s*:\s*"?(-?\d+(?:\.\d+)?)"?/i)?.[1] ??
+    html.match(/property="longitude"\s+content="([^"]+)"/i)?.[1]
+
+  if (!lat || !lng) return undefined
+  const parsedLat = Number(lat)
+  const parsedLng = Number(lng)
+  if (!Number.isFinite(parsedLat) || !Number.isFinite(parsedLng)) return undefined
+  return { lat: parsedLat, lng: parsedLng }
+}
+
 function numberFromText(value?: string): number | undefined {
   if (!value) return undefined
   const match = value.replace(/,/g, '').match(/(\d+(?:\.\d+)?)/)
@@ -284,14 +319,20 @@ function routeTypeFromLength(lengthLabel?: string): RouteType | undefined {
   return undefined
 }
 
-function extractTrailStats(html: string): Pick<WTAEnrichment, 'miles' | 'elevationGainFt' | 'difficulty' | 'routeType'> {
+function extractTrailStats(html: string): Pick<WTAEnrichment, 'miles' | 'elevationGainFt' | 'trailheadElevationFt' | 'difficulty' | 'routeType'> {
   const lengthLabel = extractStatValue(html, 'Length')
   const gainLabel = extractStatValue(html, 'Elevation Gain')
+  const highPointLabel = extractStatValue(html, 'Highest Point')
   const difficultyLabel = extractStatValue(html, 'Calculated Difficulty')
+  const elevationGainFt = numberFromText(gainLabel)
+  const highestPointFt = numberFromText(highPointLabel)
 
   return {
     miles: numberFromText(lengthLabel),
-    elevationGainFt: numberFromText(gainLabel),
+    elevationGainFt,
+    trailheadElevationFt: highestPointFt !== undefined && elevationGainFt !== undefined
+      ? Math.max(0, highestPointFt - elevationGainFt)
+      : undefined,
     difficulty: difficultyFromLabel(difficultyLabel),
     routeType: routeTypeFromLength(lengthLabel),
   }
@@ -336,13 +377,11 @@ function buildAlert(beforeYouGo?: string): WTAEnrichment['alert'] {
   }
 }
 
-async function enrichFromWta(trail: TrailProjection): Promise<WTAEnrichment | null> {
-  const match = await findWtaTrail(trail.name)
-  if (!match) return null
-
+async function enrichmentFromMatch(match: { url: string; name: string }): Promise<WTAEnrichment> {
   const html = await fetchTextWithTimeout(match.url)
   const parkingLabel = extractParkingLabel(html)
   const stats = extractTrailStats(html)
+  const coords = extractCoordinates(html)
   const gettingThere = extractSection(html, 'Getting There')
   const beforeYouGo = extractSection(html, 'Before You Go')
   const roadNotes = firstUsefulSentence(gettingThere)
@@ -354,13 +393,28 @@ async function enrichFromWta(trail: TrailProjection): Promise<WTAEnrichment | nu
     parkingType: parkingTypeFromLabel(parkingLabel),
     accessLevel: accessFromRoadNotes(roadNotes),
     roadNotes,
+    lat: coords?.lat,
+    lng: coords?.lng,
+    description: extractMetaDescription(html),
     ...stats,
     alert: buildAlert(beforeYouGo),
   }
 }
 
+async function enrichFromWta(trail: TrailProjection): Promise<WTAEnrichment | null> {
+  const match = await findWtaTrail(trail.name)
+  if (!match) return null
+
+  return enrichmentFromMatch(match)
+}
+
 function patchForEnrichment(trail: TrailProjection, enrichment: WTAEnrichment) {
   const ops: Array<{ op: 'set'; path: string; value: unknown }> = [
+    {
+      op: 'set',
+      path: '/name',
+      value: cleanName(enrichment.wtaName),
+    },
     {
       op: 'set',
       path: '/wta',
@@ -396,6 +450,10 @@ function patchForEnrichment(trail: TrailProjection, enrichment: WTAEnrichment) {
 
   if (typeof enrichment.elevationGainFt === 'number' && enrichment.elevationGainFt >= 0) {
     ops.push({ op: 'set', path: '/elevationGainFt', value: enrichment.elevationGainFt })
+  }
+
+  if (typeof enrichment.trailheadElevationFt === 'number' && enrichment.trailheadElevationFt >= 0) {
+    ops.push({ op: 'set', path: '/trailheadElevationFt', value: enrichment.trailheadElevationFt })
   }
 
   if (enrichment.difficulty) {
@@ -461,6 +519,99 @@ function patchForWtaMiss() {
   ]
 }
 
+function slugFromUrl(url: string): string {
+  try {
+    return new URL(url).pathname.split('/').filter(Boolean).pop() ?? slugFromName(url)
+  } catch {
+    return slugFromName(url)
+  }
+}
+
+function landOwnerFromParking(parkingType?: ParkingPassType): LandOwner {
+  if (parkingType === 'nw_forest_pass') return 'USFS'
+  if (parkingType === 'national_park_fee') return 'NPS'
+  if (parkingType === 'discover_pass') return 'DNR'
+  return 'Other'
+}
+
+function trailDocFromWtaEnrichment(enrichment: WTAEnrichment) {
+  if (typeof enrichment.lat !== 'number' || typeof enrichment.lng !== 'number') return null
+
+  const region = regionFromLatLng(enrichment.lat, enrichment.lng)
+  const now = new Date().toISOString()
+  const parkingType = enrichment.parkingType ?? 'unknown'
+  const accessLevel = enrichment.accessLevel ?? 'unknown'
+  const alerts = enrichment.alert ? [enrichment.alert] : []
+
+  return {
+    id: `wta-${slugFromUrl(enrichment.url)}`,
+    pk: region,
+    name: cleanName(enrichment.wtaName),
+    region,
+    lat: enrichment.lat,
+    lng: enrichment.lng,
+    miles: enrichment.miles ?? 3,
+    elevationGainFt: enrichment.elevationGainFt ?? 0,
+    trailheadElevationFt: enrichment.trailheadElevationFt,
+    difficulty: enrichment.difficulty ?? 'Moderate',
+    routeType: enrichment.routeType ?? 'OutAndBack',
+    landOwner: landOwnerFromParking(parkingType),
+    parking: {
+      type: parkingType,
+      notes: enrichment.parkingLabel ? `WTA: ${enrichment.parkingLabel}` : undefined,
+      confidence: parkingType === 'unknown' ? 'medium' : 'high',
+    },
+    access: {
+      level: accessLevel,
+      notes: enrichment.roadNotes ? `WTA: ${enrichment.roadNotes}` : undefined,
+      confidence: enrichment.roadNotes ? 'high' : 'medium',
+    },
+    roadCondition: enrichment.roadNotes ? {
+      surface: 'unknown',
+      condition: accessLevel === 'rough' || accessLevel === 'high_clearance' ? 'rough' : 'unknown',
+      notes: `WTA: ${enrichment.roadNotes}`,
+      confidence: 'high',
+      lastUpdatedISO: now,
+    } : undefined,
+    conditions: {
+      overall: 'unknown',
+      snow: 'none',
+      mud: 'dry',
+      bugs: 'none',
+      notes: [],
+      lastUpdatedISO: now,
+    },
+    alerts,
+    description: enrichment.description,
+    source: 'wta',
+    wta: {
+      name: enrichment.wtaName,
+      url: enrichment.url,
+      syncedAt: now,
+      statsSyncedAt: now,
+      status: 'matched',
+      parkingChecked: true,
+      accessChecked: true,
+      statsChecked: true,
+    },
+    syncedAt: now,
+  }
+}
+
+async function seedWtaTrail(container: any, seed: { name: string; url?: string }): Promise<boolean> {
+  const match = seed.url
+    ? { url: seed.url, name: extractPageTitle(await fetchTextWithTimeout(seed.url)) ?? seed.name }
+    : await findWtaTrail(seed.name)
+
+  if (!match) return false
+  const enrichment = await enrichmentFromMatch(match)
+  const doc = trailDocFromWtaEnrichment(enrichment)
+  if (!doc) return false
+
+  await container.items.upsert(doc)
+  return true
+}
+
 async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const startedAt = Date.now()
   const requestId = Math.random().toString(36).slice(2)
@@ -476,6 +627,28 @@ async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Pro
     const name = url.searchParams.get('name')?.trim()
     const limit = Math.min(MAX_LIMIT, Math.max(1, Number.isFinite(limitParam) ? limitParam : DEFAULT_LIMIT))
     const container = getTrailsContainer()
+    const seedNames = url.searchParams.getAll('seed').map(seed => seed.trim()).filter(Boolean)
+    const seeds = name
+      ? [{ name }]
+      : [
+          ...DEFAULT_WTA_SEEDS,
+          ...seedNames.map(seedName => ({ name: seedName })),
+        ]
+
+    let seeded = 0
+    let seedErrors = 0
+
+    for (const seed of seeds) {
+      if (Date.now() - startedAt > MAX_RUN_MS - FETCH_TIMEOUT_MS * 3) break
+
+      try {
+        if (await seedWtaTrail(container, seed)) seeded++
+      } catch (err) {
+        seedErrors++
+        context.warn(`[WTA][${requestId}] seed failed for ${seed.name}`, err)
+      }
+    }
+
     const where = name
       ? 'WHERE IS_DEFINED(t.name) AND CONTAINS(LOWER(t.name), @name)'
       : force
@@ -543,6 +716,8 @@ async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Pro
         checked,
         matched,
         updated,
+        seeded,
+        seedErrors,
         errors,
         stoppedEarly,
         durationMs: Date.now() - startedAt,

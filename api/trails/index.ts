@@ -36,6 +36,8 @@ function normalizeTrailName(value: unknown): string {
     .toLowerCase()
     .replace(/&/g, 'and')
     .replace(/\([^)]*\)/g, '')
+    .replace(/\btwenty two\b/g, '22')
+    .replace(/\btwenty[-\s]?two\b/g, '22')
     .replace(/\btrail\b/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
@@ -51,6 +53,7 @@ function trailQuality(trail: TrailDoc): number {
   if (trail.access?.level && trail.access.level !== 'unknown') score += 2
   if (trail.roadCondition?.condition && trail.roadCondition.condition !== 'unknown') score += 1
   if (trail.wta?.status === 'matched') score += 4
+  if (trail.source === 'wta') score += 6
   if (trail.source === 'wadnr' || trail.source === 'wa_parks') score += 2
   if (trail.source === 'osm') score -= 1
   return score

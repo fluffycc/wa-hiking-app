@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
-import { MapContainer, TileLayer, CircleMarker, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, Polygon, Polyline, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
-import type { LatLngBoundsExpression } from 'leaflet'
+import type { LatLngBoundsExpression, LatLngExpression } from 'leaflet'
 import type { Trail } from '../../domain/types'
 import { useUiStore } from '../../state/useUiStore'
 import { useTrailStore } from '../../state/useTrailStore'
@@ -9,6 +9,32 @@ import { useTrailStore } from '../../state/useTrailStore'
 const WASHINGTON_BOUNDS: LatLngBoundsExpression = [
   [45.35, -125.1],
   [49.2, -116.75],
+]
+
+const WASHINGTON_OUTLINE: LatLngExpression[] = [
+  [45.55, -124.02],
+  [46.26, -124.09],
+  [46.72, -124.04],
+  [47.35, -124.32],
+  [48.16, -124.73],
+  [48.37, -124.72],
+  [48.50, -124.45],
+  [48.40, -123.22],
+  [48.78, -123.03],
+  [49.00, -123.32],
+  [49.00, -116.92],
+  [45.55, -116.92],
+  [45.55, -124.02],
+]
+
+const MAP_MASK: LatLngExpression[][] = [
+  [
+    [-90, -180],
+    [-90, 180],
+    [90, 180],
+    [90, -180],
+  ],
+  WASHINGTON_OUTLINE,
 ]
 
 const PIN_COLORS = {
@@ -131,6 +157,16 @@ export function TrailMap() {
         updateWhenIdle
         updateInterval={200}
         url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+      />
+      <Polygon
+        positions={MAP_MASK}
+        interactive={false}
+        pathOptions={{ color: 'transparent', fillColor: '#f8f6f1', fillOpacity: 1, stroke: false }}
+      />
+      <Polyline
+        positions={WASHINGTON_OUTLINE}
+        interactive={false}
+        pathOptions={{ color: '#2f5d46', opacity: 0.65, weight: 1.5 }}
       />
       <ViewportTrailLoader />
       <RecenterMap trail={selected} />

@@ -31,7 +31,7 @@ The app answers four practical questions:
 | WA State Parks / wa.gov | State park trails and Discover Pass defaults | None |
 | NOAA Weather | Regional forecast snapshots overlaid on trails at read time | None |
 | WSDOT Pass Conditions | Mountain pass access warnings only | Free key |
-| Washington Trails Association | Authoritative trail stats, parking pass, WTA link, road/access notes | Public pages |
+| Washington Trails Association | Authoritative trail stats, missing-trail seeds, parking pass, WTA link, road/access notes | Public pages |
 
 WSDOT is intentionally not treated as proof of trail closure because pass closures are too broad for individual trails.
 Legacy WSDOT pass alerts are filtered out of trail API responses so they do not color or clutter individual trail details.
@@ -109,6 +109,8 @@ Available manual modes:
 The scheduled workflow runs the full pipeline twice per day at `03:00` and `15:00` UTC, which is roughly evening and morning Pacific time depending on daylight saving time.
 
 WTA sync is intentionally incremental (`limit=20` in the workflow) because it reads public WTA pages through Azure Static Web Apps, which can fail long requests near the 45-second mark. It prioritizes trails missing WTA stats or permit data. WTA should overwrite broad OSM defaults for distance, elevation gain, difficulty, route type, and parking pass.
+
+WTA sync also seeds a small set of high-confidence WTA-native trail records for important hikes that broad OSM sync can miss or mis-measure, including Lake 22 and Heather Lake on the Mountain Loop Highway. Additional one-off WTA seeds can be requested with `sync-wta?seed=Trail%20Name`.
 
 ## Build And Test
 

@@ -90,7 +90,7 @@ export interface TrailAlert {
 
 // ─── Source tracking ─────────────────────────────────────────────────────────
 
-export type DataSource = 'osm' | 'wadnr' | 'wa_parks' | 'ridb' | 'manual'
+export type DataSource = 'osm' | 'wadnr' | 'wa_parks' | 'wta' | 'ridb' | 'manual'
 
 // ─── Feedback ────────────────────────────────────────────────────────────────
 

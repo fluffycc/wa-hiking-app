@@ -36,16 +36,16 @@
     display: none;
   }
   .safe-area-bottom {
-    padding-bottom: max(env(safe-area-inset-bottom, 0px), 6px);
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 2px);
   }
   .above-bottom-nav {
-    bottom: calc(3.1rem + max(env(safe-area-inset-bottom, 0px), 6px));
+    bottom: calc(2.55rem + max(env(safe-area-inset-bottom, 0px), 2px));
   }
   .bottom-sheet-expanded {
     top: 3.5rem;
-    bottom: calc(3.1rem + max(env(safe-area-inset-bottom, 0px), 6px));
+    bottom: calc(2.55rem + max(env(safe-area-inset-bottom, 0px), 2px));
   }
   .feedback-float {
-    bottom: calc(4rem + max(env(safe-area-inset-bottom, 0px), 6px));
+    bottom: calc(3.4rem + max(env(safe-area-inset-bottom, 0px), 2px));
   }
 }

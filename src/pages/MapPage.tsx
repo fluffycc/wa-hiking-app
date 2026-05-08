@@ -11,6 +11,8 @@ import type { Trail } from '../domain/types'
 function normalizeSearch(value: string) {
   return value
     .toLowerCase()
+    .replace(/\btwenty two\b/g, '22')
+    .replace(/\btwenty[-\s]?two\b/g, '22')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
 }
@@ -44,6 +46,7 @@ function trailDataQuality(trail: Trail) {
   if (trail.parking.type !== 'unknown') score += 2
   if (trail.access.level !== 'unknown') score += 2
   if (trail.roadCondition?.condition && trail.roadCondition.condition !== 'unknown') score += 1
+  if (trail.source === 'wta') score += 4
   if (trail.source === 'wadnr' || trail.source === 'wa_parks') score += 1
   if (trail.source === 'osm') score -= 1
   return score
