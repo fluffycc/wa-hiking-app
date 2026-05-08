@@ -43,10 +43,6 @@ function alertIsTrailClosure(alert: NonNullable<Trail['alerts']>[number]): boole
   return alert.type === 'closure' || textSuggestsClosure(alert.message)
 }
 
-function textSuggestsDifficultAccess(value?: string): boolean {
-  return !!value && /\b(rough|potholes?|rutted|washout|washed out|high clearance|4x4|4wd|impassable|road closed|no access|not accessible)\b/i.test(value)
-}
-
 function trailHasClosure(trail: Trail): boolean {
   const activeAlerts = trail.alerts?.filter(alertIsActive) ?? []
 
@@ -56,20 +52,13 @@ function trailHasClosure(trail: Trail): boolean {
   )
 }
 
-function trailHasSnowOrDifficultAccess(trail: Trail): boolean {
-  return (
-    trail.conditions.snow === 'significant' ||
-    ['rough', 'high_clearance', '4x4_only'].includes(trail.access.level) ||
-    trail.roadCondition?.condition === 'rough' ||
-    trail.roadCondition?.condition === 'very_rough' ||
-    textSuggestsDifficultAccess(trail.access.notes) ||
-    textSuggestsDifficultAccess(trail.roadCondition?.notes)
-  )
+function trailHasSignificantSnow(trail: Trail): boolean {
+  return trail.conditions.snow === 'significant'
 }
 
 function getPinColor(trail: Trail): string {
   if (trailHasClosure(trail)) return PIN_COLORS.closed
-  if (trailHasSnowOrDifficultAccess(trail)) return PIN_COLORS.caution
+  if (trailHasSignificantSnow(trail)) return PIN_COLORS.caution
   return PIN_COLORS.go
 }
 

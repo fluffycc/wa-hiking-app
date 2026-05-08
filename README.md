@@ -40,10 +40,10 @@ WSDOT is intentionally not treated as proof of trail closure because pass closur
 Trail dots are deliberately conservative:
 
 - Red: actual trail-specific closure.
-- Yellow: significant snow or concrete trailhead access difficulty, such as rough road, high-clearance, 4x4, washout, potholes, or impassable access.
-- Green: everything else, including unknown access.
+- Yellow: significant snow coverage.
+- Green: everything else, including road cautions, rough access, pass advisories, parking uncertainty, and unknown access.
 
-Access warnings can still appear in the trail details panel without turning the dot yellow.
+Access warnings can still appear as yellow information in the trail details panel without turning the map dot yellow.
 
 ## Local Development
 
@@ -134,6 +134,7 @@ The map uses three layers of caching:
 
 - Coarse viewport rounding before requesting trails.
 - Short client-side viewport cache in Zustand.
+- Short warm-instance response cache in the Azure Function.
 - API `Cache-Control` headers for `/api/trails`.
 
 Cosmos DB is still the main latency source for brand-new map areas. A future map-tile or geohash endpoint would be the next major speed upgrade.

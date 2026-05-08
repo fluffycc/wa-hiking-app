@@ -111,6 +111,24 @@ export const useTrailStore = create<TrailStore>((set, get) => ({
     const requestSeq = ++_loadSeq
     const state = get()
     const nextBounds = bounds ?? state.viewportBounds ?? undefined
+    const key = cacheKey(state.activeFilters, state.searchQuery, state.sortKey, nextBounds)
+    const cached = _trailCache.get(key)
+
+    if (cached && Date.now() - cached.cachedAt < VIEWPORT_CACHE_TTL_MS) {
+      const selectedTrailId = useUiStore.getState().selectedTrailId
+      const trails = mergeSelectedTrail(cached.data.trails, state.trails, selectedTrailId, nextBounds)
+      set({
+        trails,
+        filteredTrails: deriveFiltered(trails, state.searchQuery, state.activeFilters, state.sortKey),
+        loading: false,
+        error: null,
+        viewportBounds: nextBounds ?? null,
+        usingApi: true,
+        totalTrails: cached.data.total,
+        hasMore: cached.data.hasMore,
+      })
+      return
+    }
 
     set({
       loading: true,
@@ -120,22 +138,7 @@ export const useTrailStore = create<TrailStore>((set, get) => ({
 
     try {
       const latest = get()
-      const key = cacheKey(latest.activeFilters, latest.searchQuery, latest.sortKey, nextBounds)
-      const cached = _trailCache.get(key)
-
-      if (cached && Date.now() - cached.cachedAt < VIEWPORT_CACHE_TTL_MS) {
-        const selectedTrailId = useUiStore.getState().selectedTrailId
-        const trails = mergeSelectedTrail(cached.data.trails, state.trails, selectedTrailId, nextBounds)
-        set({
-          trails,
-          filteredTrails: deriveFiltered(trails, latest.searchQuery, latest.activeFilters, latest.sortKey),
-          loading: false,
-          usingApi: true,
-          totalTrails: cached.data.total,
-          hasMore: cached.data.hasMore,
-        })
-        return
-      }
+      const latestKey = cacheKey(latest.activeFilters, latest.searchQuery, latest.sortKey, nextBounds)
 
       const data = await fetchTrails(
         latest.activeFilters,
@@ -147,7 +150,7 @@ export const useTrailStore = create<TrailStore>((set, get) => ({
       )
       if (requestSeq !== _loadSeq) return
       const selectedTrailId = useUiStore.getState().selectedTrailId
-      _trailCache.set(key, {
+      _trailCache.set(latestKey, {
         data: {
           trails: data.trails,
           total: data.total,

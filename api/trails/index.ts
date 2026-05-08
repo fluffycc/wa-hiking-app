@@ -1,6 +1,33 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { getTrailsContainer } from '../shared/cosmosClient'
 
+const CACHE_CONTROL = 'public, max-age=120, s-maxage=300, stale-while-revalidate=600'
+const RESPONSE_CACHE_TTL_MS = 2 * 60 * 1000
+const RESPONSE_CACHE_MAX_ENTRIES = 200
+
+interface CachedTrailsResponse {
+  cachedAt: number
+  body: unknown
+}
+
+const responseCache = new Map<string, CachedTrailsResponse>()
+
+function getRequestCacheKey(req: HttpRequest): string {
+  const url = new URL(req.url)
+  return [...url.searchParams.entries()]
+    .sort(([aKey, aValue], [bKey, bValue]) => aKey.localeCompare(bKey) || aValue.localeCompare(bValue))
+    .map(([key, value]) => `${key}=${value}`)
+    .join('&')
+}
+
+function rememberResponse(key: string, body: unknown): void {
+  responseCache.set(key, { cachedAt: Date.now(), body })
+  if (responseCache.size <= RESPONSE_CACHE_MAX_ENTRIES) return
+
+  const oldestKey = responseCache.keys().next().value
+  if (oldestKey) responseCache.delete(oldestKey)
+}
+
 async function trailsHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const p = Object.fromEntries(new URL(req.url).searchParams)
   const page   = Math.max(1, parseInt(p['page']  ?? '1'))
@@ -8,6 +35,19 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
   const offset = (page - 1) * limit
   const fetchLimit = limit + 1
   const hasBounds = !!(p['north'] && p['south'] && p['east'] && p['west'])
+  const requestCacheKey = getRequestCacheKey(req)
+  const cached = responseCache.get(requestCacheKey)
+
+  if (cached && Date.now() - cached.cachedAt < RESPONSE_CACHE_TTL_MS) {
+    return {
+      status: 200,
+      headers: {
+        'Cache-Control': CACHE_CONTROL,
+        'X-Cache': 'HIT',
+      },
+      jsonBody: cached.body,
+    }
+  }
 
   const conditions: string[] = []
   const params: { name: string; value: unknown }[] = []
@@ -63,10 +103,16 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
     ).fetchAll()
     const trails = dataRes.resources.slice(0, limit)
     const hasMore = dataRes.resources.length > limit
+    const body = { trails, total: offset + trails.length, page, limit, hasMore }
+    rememberResponse(requestCacheKey, body)
+
     return {
       status: 200,
-      headers: { 'Cache-Control': 'public, max-age=120, s-maxage=300, stale-while-revalidate=600' },
-      jsonBody: { trails, total: offset + trails.length, page, limit, hasMore },
+      headers: {
+        'Cache-Control': CACHE_CONTROL,
+        'X-Cache': 'MISS',
+      },
+      jsonBody: body,
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

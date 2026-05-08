@@ -28,17 +28,46 @@ function scoreSuggestion(query: string, trail: Trail) {
   return 99
 }
 
+function suggestionLocationKey(trail: Trail) {
+  const lat = Math.round(trail.lat * 100)
+  const lng = Math.round(trail.lng * 100)
+  return `${normalizeSearch(trail.name)}|${trail.region}|${lat}|${lng}`
+}
+
+function trailDataQuality(trail: Trail) {
+  let score = 0
+  if (trail.parking.type !== 'unknown') score += 2
+  if (trail.access.level !== 'unknown') score += 2
+  if (trail.roadCondition?.condition && trail.roadCondition.condition !== 'unknown') score += 1
+  if (trail.source === 'wadnr' || trail.source === 'wa_parks') score += 1
+  if (trail.source === 'osm') score -= 1
+  return score
+}
+
 function rankSuggestions(query: string, results: Trail[]) {
-  return [...results]
+  const ranked = [...results]
     .filter(trail => scoreSuggestion(query, trail) < 99)
     .sort((a, b) => {
       const scoreDiff = scoreSuggestion(query, a) - scoreSuggestion(query, b)
       if (scoreDiff !== 0) return scoreDiff
+      const qualityDiff = trailDataQuality(b) - trailDataQuality(a)
+      if (qualityDiff !== 0) return qualityDiff
       const lengthDiff = a.name.length - b.name.length
       if (lengthDiff !== 0) return lengthDiff
       return a.name.localeCompare(b.name)
     })
-    .slice(0, 8)
+
+  const seen = new Set<string>()
+  const unique: Trail[] = []
+  for (const trail of ranked) {
+    const key = suggestionLocationKey(trail)
+    if (seen.has(key)) continue
+    seen.add(key)
+    unique.push(trail)
+    if (unique.length >= 8) break
+  }
+
+  return unique
 }
 
 export function MapPage() {
@@ -97,6 +126,7 @@ export function MapPage() {
       ? `Showing ${filteredTrails.length} trails in this area`
       : `${filteredTrails.length} trails in view`
     : `${filteredTrails.length} sample trails`
+  const showSearchDropdown = suggestions.length > 0 || searchLoading
 
   const selectSuggestion = (trail: Trail) => {
     focusTrail(trail)
@@ -108,7 +138,7 @@ export function MapPage() {
   return (
     <div className="relative flex flex-col h-full min-h-0">
       <div className="absolute top-3 left-3 right-3 z-20 space-y-2 pointer-events-none">
-        <div className="relative pointer-events-auto">
+        <div className="relative z-50 pointer-events-auto">
           <input
             value={mapSearch}
             onChange={e => setMapSearch(e.target.value)}
@@ -124,8 +154,8 @@ export function MapPage() {
             </button>
           )}
 
-          {(suggestions.length > 0 || searchLoading) && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-white/98 backdrop-blur-sm border border-gray-100 rounded-2xl shadow-sheet overflow-hidden">
+          {showSearchDropdown && (
+            <div className="absolute z-50 top-full left-0 right-0 mt-1 max-h-[60vh] overflow-y-auto bg-white/98 backdrop-blur-sm border border-gray-100 rounded-2xl shadow-sheet">
               {searchLoading && (
                 <div className="flex items-center gap-2 px-3 py-2 text-xs text-trail-stone">
                   <span className="w-3 h-3 rounded-full border-2 border-trail-green/20 border-t-trail-green animate-spin" />
@@ -146,26 +176,30 @@ export function MapPage() {
           )}
         </div>
 
-        <div className="bg-white/90 backdrop-blur-sm rounded-2xl px-3 py-2 shadow-card pointer-events-auto">
-          <QuickFilterChips />
-        </div>
-
-        <div className="flex gap-2 items-center pointer-events-auto flex-wrap">
-          <div className="text-xs text-trail-stone font-body bg-white/80 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">
-            {trailCountLabel}
+        {!showSearchDropdown && (
+          <div className="bg-white/90 backdrop-blur-sm rounded-2xl px-3 py-2 shadow-card pointer-events-auto">
+            <QuickFilterChips />
           </div>
-          {loading && trails.length > 0 && (
-            <div className="flex items-center gap-1.5 text-xs text-trail-green font-body bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">
-              <span className="w-3 h-3 rounded-full border-2 border-trail-green/20 border-t-trail-green animate-spin" />
-              Updating area
+        )}
+
+        {!showSearchDropdown && (
+          <div className="flex gap-2 items-center pointer-events-auto flex-wrap">
+            <div className="text-xs text-trail-stone font-body bg-white/80 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">
+              {trailCountLabel}
             </div>
-          )}
-          {!usingApi && (
-            <div className="text-xs text-amber-700 font-body bg-amber-50/90 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">
-              Sample data - set up Cosmos DB for live trails
-            </div>
-          )}
-        </div>
+            {loading && trails.length > 0 && (
+              <div className="flex items-center gap-1.5 text-xs text-trail-green font-body bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">
+                <span className="w-3 h-3 rounded-full border-2 border-trail-green/20 border-t-trail-green animate-spin" />
+                Updating area
+              </div>
+            )}
+            {!usingApi && (
+              <div className="text-xs text-amber-700 font-body bg-amber-50/90 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">
+                Sample data - set up Cosmos DB for live trails
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex-1 min-h-0" style={{ position: 'relative', zIndex: 0, isolation: 'isolate', height: '100%' }}>

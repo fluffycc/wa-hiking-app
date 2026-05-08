@@ -20,10 +20,10 @@ WA Hiking App is a mobile-first Washington trail map. It should feel practical, 
 Keep pin colors simple:
 
 - Red only for trail-specific closure.
-- Yellow for significant snow or concrete access difficulty.
+- Yellow only for significant snow coverage.
 - Green for everything else.
 
-Do not make a dot yellow only because parking is unknown, access is unknown, WSDOT has a broad pass advisory, mud is possible, or `conditions.overall` is generically `caution`.
+Do not make a dot yellow because parking is unknown, access is unknown, WSDOT has a broad pass advisory, the road is rough, mud is possible, or `conditions.overall` is generically `caution`. Those warnings belong inside the trail details panel.
 
 ## Data Pipeline
 
