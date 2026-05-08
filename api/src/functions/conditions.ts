@@ -26,12 +26,14 @@ const REGION_SAMPLES: Record<string, { lat: number; lng: number; elevFt: number 
  * and falls back to console.*. Ensures info/warn/error are always functions.
  */
 function getLogger(context?: InvocationContext) {
-  const base = context?.log ?? console
+  const bindLog = (fn: unknown, fallback: (...args: any[]) => void) =>
+    typeof fn === 'function' ? fn.bind(context) as (...args: any[]) => void : fallback
+
   return {
-    info: typeof base.info === 'function' ? base.info.bind(base) : console.log.bind(console),
-    warn: typeof base.warn === 'function' ? base.warn.bind(base) : console.warn.bind(console),
-    error: typeof base.error === 'function' ? base.error.bind(base) : console.error.bind(console),
-    debug: typeof base.debug === 'function' ? base.debug.bind(base) : console.debug?.bind(console) ?? console.log.bind(console),
+    info: bindLog(context?.info ?? context?.log, console.info.bind(console)),
+    warn: bindLog(context?.warn ?? context?.log, console.warn.bind(console)),
+    error: bindLog(context?.error ?? context?.log, console.error.bind(console)),
+    debug: bindLog(context?.debug ?? context?.log, console.debug?.bind(console) ?? console.log.bind(console)),
   }
 }
 
@@ -57,11 +59,19 @@ function getFetch(): typeof fetch {
 function getSyncTokenFromRequest(req: HttpRequest): string | null {
   try {
     if (req && req.headers) {
-      // headers keys are typically lowercased in Azure Functions
-      const headerToken = (req.headers['x-sync-token'] || req.headers['X-Sync-Token']) as string | undefined
+      const headers = req.headers as Headers & Record<string, string | undefined>
+      const headerToken =
+        typeof headers.get === 'function'
+          ? headers.get('x-sync-token')
+          : headers['x-sync-token'] || headers['X-Sync-Token']
+
       if (headerToken) return headerToken
 
-      const auth = (req.headers['authorization'] || req.headers['Authorization']) as string | undefined
+      const auth =
+        typeof headers.get === 'function'
+          ? headers.get('authorization')
+          : headers['authorization'] || headers['Authorization']
+
       if (auth && typeof auth === 'string') {
         const m = auth.match(/Bearer\s+(.+)/i)
         if (m) return m[1]
@@ -169,17 +179,14 @@ async function conditionsSyncHandler(
 
     logger.info('Starting conditions sync (NOAA + WSDOT)...')
 
-    // Validate required env vars early
-    const requiredEnv = [
-      // keep the canonical name in the list for configuration checks
-      'SYNC_SECRET_TOKEN',
-      'COSMOS_ENDPOINT',
-      'COSMOS_KEY',
-      'COSMOS_DATABASE',
-      'COSMOS_CONTAINER',
-    ]
-
-    const missing = requiredEnv.filter(k => !process.env[k])
+    // Validate required env vars early. Some older setup docs used aliases.
+    const missing = [
+      ['SYNC_SECRET_TOKEN', 'SYNC_TOKEN', 'SYNC_SECRET'].some(k => process.env[k]) ? null : 'SYNC_SECRET_TOKEN',
+      process.env['COSMOS_ENDPOINT'] ? null : 'COSMOS_ENDPOINT',
+      process.env['COSMOS_KEY'] ? null : 'COSMOS_KEY',
+      process.env['COSMOS_DATABASE'] || process.env['COSMOS_DB_NAME'] ? null : 'COSMOS_DATABASE or COSMOS_DB_NAME',
+      process.env['COSMOS_CONTAINER'] ? null : 'COSMOS_CONTAINER',
+    ].filter((k): k is string => !!k)
 
     if (missing.length > 0) {
       logger.error(`Missing env vars: ${missing.join(', ')}`)

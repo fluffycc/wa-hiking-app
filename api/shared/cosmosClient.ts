@@ -13,7 +13,7 @@ export function getTrailsContainer(): any {
 
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { CosmosClient } = require('@azure/cosmos')
-  const dbName        = process.env['COSMOS_DATABASE'] ?? 'wahiking'
+  const dbName        = process.env['COSMOS_DATABASE'] ?? process.env['COSMOS_DB_NAME'] ?? 'wahiking'
   const containerName = process.env['COSMOS_CONTAINER'] ?? 'trails'
 
   const client = new CosmosClient({ endpoint, key })

@@ -1,4 +1,17 @@
-import type { WARegion, Difficulty, RouteType, LandOwner, ParkingPassType, AccessLevel } from '../../src/domain/types'
+type WARegion =
+  | 'Olympic Peninsula'
+  | 'North Cascades'
+  | 'Central Cascades'
+  | 'Snoqualmie Region'
+  | 'South Cascades'
+  | 'Eastern Washington'
+  | 'Puget Sound & Islands'
+  | 'Southwest Washington'
+
+type Difficulty = 'Easy' | 'Moderate' | 'Hard' | 'Strenuous'
+type LandOwner = 'DNR' | 'WDFW' | 'StateParks' | 'USFS' | 'NPS' | 'County' | 'City' | 'Other'
+type ParkingPassType = 'free' | 'discover_pass' | 'nw_forest_pass' | 'national_park_fee' | 'unknown'
+type AccessLevel = 'sedan_ok' | 'rough' | 'high_clearance' | '4x4_only' | 'unknown'
 
 // ─── WA region from lat/lng bounding boxes ────────────────────────────────────
 
