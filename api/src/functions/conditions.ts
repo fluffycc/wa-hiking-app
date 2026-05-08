@@ -164,6 +164,10 @@ async function getWSDOTPasses(): Promise<Map<string, string>> {
   return alerts
 }
 
+function alertIndicatesClosure(message: string): boolean {
+  return /\b(closed|closure|impassable|not accessible|no access|blocked)\b/i.test(message)
+}
+
 async function conditionsSyncHandler(
   req: HttpRequest,
   context: InvocationContext
@@ -288,7 +292,7 @@ async function conditionsSyncHandler(
           const derived = deriveConditions(periods, trailheadElev, summitElev)
 
           const trailAlerts: Array<{
-            type: 'warning'
+            type: 'closure' | 'warning'
             message: string
             source: string
             reportedISO: string
@@ -300,7 +304,7 @@ async function conditionsSyncHandler(
               (trail.region && trail.region.toLowerCase().includes(passName.split(' ')[0]))
             ) {
               trailAlerts.push({
-                type: 'warning',
+                type: alertIndicatesClosure(alertMsg) ? 'closure' : 'warning',
                 message: alertMsg,
                 source: 'WSDOT',
                 reportedISO: new Date().toISOString(),

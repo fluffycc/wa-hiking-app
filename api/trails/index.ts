@@ -4,8 +4,9 @@ import { getTrailsContainer } from '../shared/cosmosClient'
 async function trailsHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const p = Object.fromEntries(new URL(req.url).searchParams)
   const page   = Math.max(1, parseInt(p['page']  ?? '1'))
-  const limit  = Math.min(1000, Math.max(1, parseInt(p['limit'] ?? '50')))
+  const limit  = Math.min(100, Math.max(1, parseInt(p['limit'] ?? '50')))
   const offset = (page - 1) * limit
+  const fetchLimit = limit + 1
 
   const conditions: string[] = []
   const params: { name: string; value: unknown }[] = []
@@ -51,12 +52,13 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
 
   try {
     const container = getTrailsContainer()
-    const [countRes, dataRes] = await Promise.all([
-      container.items.query({ query: `SELECT VALUE COUNT(1) FROM t ${where}`, parameters: params }, { enableCrossPartitionQuery: true }).fetchAll(),
-      container.items.query({ query: `SELECT * FROM t ${where} ORDER BY ${orderBy} OFFSET ${offset} LIMIT ${limit}`, parameters: params }, { enableCrossPartitionQuery: true }).fetchAll(),
-    ])
-    const total = (countRes.resources[0] as number) ?? 0
-    return { status: 200, jsonBody: { trails: dataRes.resources, total, page, limit, hasMore: offset + dataRes.resources.length < total } }
+    const dataRes = await container.items.query(
+      { query: `SELECT * FROM t ${where} ORDER BY ${orderBy} OFFSET ${offset} LIMIT ${fetchLimit}`, parameters: params },
+      { enableCrossPartitionQuery: true }
+    ).fetchAll()
+    const trails = dataRes.resources.slice(0, limit)
+    const hasMore = dataRes.resources.length > limit
+    return { status: 200, jsonBody: { trails, total: offset + trails.length, page, limit, hasMore } }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     context.error('GET /api/trails error', message)

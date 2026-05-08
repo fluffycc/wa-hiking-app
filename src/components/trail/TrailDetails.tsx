@@ -35,6 +35,10 @@ const DNR_LEVEL_LABEL: Record<number, string> = {
   5: 'Paved highway',
 }
 
+function alertSuggestsClosure(message: string): boolean {
+  return /\b(closed|closure|impassable|not accessible|no access|blocked)\b/i.test(message)
+}
+
 function alertSuggestsClosureOrSnow(message: string): boolean {
   return /\b(closed|closure|impassable|snow|avalanche|winter)\b/i.test(message)
 }
@@ -44,6 +48,36 @@ function hasSnowOrClosureRisk(trail: Trail, activeAlerts: NonNullable<Trail['ale
     trail.conditions.snow === 'significant' ||
     activeAlerts.some(alert => alert.type === 'closure' || alertSuggestsClosureOrSnow(alert.message))
   )
+}
+
+function getAccessStatus(trail: Trail, activeAlerts: NonNullable<Trail['alerts']>) {
+  const hasClosure = activeAlerts.some(alert => alert.type === 'closure' || alertSuggestsClosure(alert.message))
+
+  if (hasClosure) {
+    return {
+      label: 'Not accessible',
+      className: 'text-red-700',
+      note: 'A closure or no-access advisory is active. Pick another trail unless you verify it has reopened.',
+    }
+  }
+
+  if (trail.access.level === 'sedan_ok') {
+    return { label: 'Sedan OK', className: 'text-trail-dark', note: null }
+  }
+
+  if (trail.access.level === 'unknown') {
+    return {
+      label: 'Check access before going',
+      className: 'text-amber-700',
+      note: 'Road access is not confirmed for this trail yet.',
+    }
+  }
+
+  return {
+    label: trail.access.level.replace(/_/g, ' '),
+    className: 'text-amber-700',
+    note: 'Road access may require more capable tires or clearance.',
+  }
 }
 
 function RoadConditionBlock({
@@ -81,6 +115,7 @@ export function TrailDetails({ trail }: Props) {
   const saved = isSaved(trail.id)
   const activeAlerts = trail.alerts?.filter(a => !a.expiresISO || new Date(a.expiresISO) > new Date()) ?? []
   const showAccessConfidenceWarning = hasSnowOrClosureRisk(trail, activeAlerts)
+  const accessStatus = getAccessStatus(trail, activeAlerts)
 
   return (
     <div className="font-body">
@@ -159,12 +194,17 @@ export function TrailDetails({ trail }: Props) {
             showConfidenceWarning={showAccessConfidenceWarning}
           />
         ) : (
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium text-trail-dark capitalize">
-              {trail.access.level.replace(/_/g, ' ')}
-            </span>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className={`text-sm font-medium capitalize ${accessStatus.className}`}>
+                {accessStatus.label}
+              </span>
             {showAccessConfidenceWarning && (
               <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">Low confidence</span>
+            )}
+            </div>
+            {accessStatus.note && (
+              <p className="text-sm text-trail-stone mt-1">{accessStatus.note}</p>
             )}
           </div>
         )}

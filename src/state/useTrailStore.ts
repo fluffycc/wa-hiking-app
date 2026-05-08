@@ -4,9 +4,11 @@ import { filterTrails, searchTrails, sortTrails, DEFAULT_FILTERS } from '../doma
 import type { FilterState, SortKey } from '../domain/filters'
 import { fetchTrails } from '../services/trailsApi'
 import type { TrailBounds } from '../services/trailsApi'
+import { useUiStore } from './useUiStore'
 
 let _sampleData: Trail[] | null = null
 let _loadSeq = 0
+const VIEWPORT_TRAIL_LIMIT = 100
 async function loadSampleData(): Promise<Trail[]> {
   if (_sampleData) return _sampleData
   const m = await import('../data/trails.sample.json')
@@ -63,11 +65,17 @@ export const useTrailStore = create<TrailStore>((set, get) => ({
         latest.searchQuery,
         latest.sortKey,
         1,
-        1000,
+        VIEWPORT_TRAIL_LIMIT,
         nextBounds,
       )
       if (requestSeq !== _loadSeq) return
-      const trails = data.trails
+      const selectedTrailId = useUiStore.getState().selectedTrailId
+      const selectedTrail = selectedTrailId
+        ? get().trails.find(t => t.id === selectedTrailId) ?? state.trails.find(t => t.id === selectedTrailId)
+        : undefined
+      const trails = selectedTrail && !data.trails.some(t => t.id === selectedTrail.id)
+        ? [selectedTrail, ...data.trails].slice(0, VIEWPORT_TRAIL_LIMIT)
+        : data.trails
       set({
         trails,
         filteredTrails: deriveFiltered(trails, latest.searchQuery, latest.activeFilters, latest.sortKey),

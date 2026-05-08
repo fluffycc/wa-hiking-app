@@ -21,7 +21,7 @@ export async function fetchTrails(
   query:   string,
   sort:    SortKey,
   page   = 1,
-  limit  = 500,
+  limit  = 100,
   bounds?: TrailBounds,
 ): Promise<TrailsApiResponse> {
   const params = new URLSearchParams()

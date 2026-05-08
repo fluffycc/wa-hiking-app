@@ -14,7 +14,6 @@ export function MapPage() {
     loadTrails,
     trails,
     usingApi,
-    totalTrails,
     hasMore,
   } = useTrailStore()
 
@@ -27,7 +26,7 @@ export function MapPage() {
 
   const trailCountLabel = usingApi
     ? hasMore
-      ? `${filteredTrails.length} of ${totalTrails} trails in view`
+      ? `Showing ${filteredTrails.length} trails in this area`
       : `${filteredTrails.length} trails in view`
     : `${filteredTrails.length} sample trails`
 

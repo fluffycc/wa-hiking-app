@@ -85,9 +85,7 @@ export function deriveConditions(
 
   // ── Overall ───────────────────────────────────────────────────────────────
   let overall: DerivedConditions['overall']
-  if (snow === 'significant' || (hasSnow && summitElevFt > 4000)) {
-    overall = 'avoid'
-  } else if (snow === 'patchy' || mud === 'heavy') {
+  if (snow === 'significant' || snow === 'patchy' || mud === 'heavy') {
     overall = 'caution'
   } else {
     overall = 'go'
