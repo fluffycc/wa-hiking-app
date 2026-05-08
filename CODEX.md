@@ -36,9 +36,9 @@ Current sync functions:
 - `sync-wta`
 - `sync-conditions`
 
-The scheduled GitHub workflow runs the useful sync chain twice per day: WA DNR, WA State Parks, WTA, then conditions. OSM/Overpass is intentionally excluded because it is slow, fragile in Static Web Apps, and produces weak trail stats. WTA enrichment is incremental by design and must stay under the Static Web Apps backend timeout, so keep its scheduled limit modest. It prioritizes trails missing WTA stats or permit data and marks checked trails so repeated workflow runs make progress without crawling WTA too aggressively. WTA should overwrite broad OSM defaults for distance, elevation gain, difficulty, route type, and parking pass. It can also seed WTA-native records for important missing hikes; keep the default seed list small.
+The scheduled GitHub workflow runs the useful sync chain twice per day: WA DNR, WA State Parks, WTA, then conditions. OSM/Overpass is intentionally excluded because it is slow, fragile in Static Web Apps, and produces weak trail stats. WTA enrichment is incremental by design and must stay under the Static Web Apps backend timeout, so keep each pass modest. The workflow runs three WTA passes per scheduled run, prioritizes trails missing WTA stats or permit data, and marks checked trails so repeated workflow runs make progress without crawling WTA too aggressively. WTA should overwrite broad OSM defaults for distance, elevation gain, difficulty, route type, and parking pass. It can also seed WTA-native records for important missing hikes and walks the WTA hike-search index with a Cosmos-backed cursor; keep both seed lists and per-run index limits small.
 
-`api/shared/trailCorrections.ts` applies read-time corrections for known WTA-authoritative records, which helps stale OSM defaults disappear immediately after deploy and cache refresh.
+`api/shared/trailCorrections.ts` applies read-time corrections for known WTA-authoritative records, which helps stale OSM defaults disappear immediately after deploy and cache refresh. The list API also hides uncorrected low-confidence OSM records with default-looking `3 miles / Easy / 0 ft gain` stats unless callers explicitly request `includeLowConfidence=true`.
 
 ## Search
 

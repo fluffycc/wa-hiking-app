@@ -52,6 +52,16 @@ function trailQuality(trail: TrailDoc): number {
   return score
 }
 
+function hasLowConfidenceDefaultStats(trail: TrailDoc): boolean {
+  return (
+    trail.source === 'osm' &&
+    trail.wta?.status !== 'matched' &&
+    Number(trail.miles) === 3 &&
+    Number(trail.elevationGainFt ?? 0) === 0 &&
+    trail.difficulty === 'Easy'
+  )
+}
+
 function searchScore(query: string | undefined, trail: TrailDoc): number {
   if (!query) return 0
 
@@ -120,9 +130,9 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
   const offset = (page - 1) * limit
   const hasBounds = !!(p['north'] && p['south'] && p['east'] && p['west'])
   const rawFetchLimit = p['q']
-    ? Math.min(100, limit * 2 + 1)
+    ? Math.min(180, limit * 4 + 1)
     : hasBounds
-      ? Math.min(90, limit + 31)
+      ? Math.min(180, limit + 121)
       : limit + 1
   const requestCacheKey = getRequestCacheKey(req)
   const cached = responseCache.get(requestCacheKey)
@@ -196,6 +206,7 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
       { enableCrossPartitionQuery: true }
     ).fetchAll()
     const correctedResources = applyTrailCorrections(dataRes.resources)
+      .filter(trail => p['includeLowConfidence'] === 'true' || !hasLowConfidenceDefaultStats(trail))
     const trails = uniqueTrails(correctedResources, p['q'], limit)
     const trailsWithConditions = await overlayRegionConditions(container, trails)
     const hasMore = dataRes.resources.length > trails.length

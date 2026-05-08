@@ -89,14 +89,16 @@ jobs:
     steps:
       - name: Trigger WTA enrichment
         run: |
-          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-            -X POST "${{ secrets.SWA_API_URL }}/api/sync-wta?limit=20" \
-            -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json" --max-time 600)
-          BODY=$(echo "$RESPONSE" | sed '$d')
-          STATUS=$(echo "$RESPONSE" | tail -1 | cut -d: -f2)
-          echo "Status: $STATUS | Body: $BODY"
-          [ "$STATUS" = "200" ] || exit 1
+          for PASS in 1 2 3; do
+            RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+              -X POST "${{ secrets.SWA_API_URL }}/api/sync-wta?limit=20&index=true&seedLimit=8" \
+              -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
+              -H "Content-Type: application/json" --max-time 90)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+            STATUS=$(echo "$RESPONSE" | tail -1 | cut -d: -f2)
+            echo "Pass $PASS Status: $STATUS | Body: $BODY"
+            [ "$STATUS" = "200" ] || exit 1
+          done
 
   sync-conditions:
     name: Sync Conditions (NOAA + WSDOT)

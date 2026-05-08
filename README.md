@@ -110,11 +110,11 @@ The scheduled workflow runs the normal pipeline twice per day at `03:00` and `15
 
 OSM is intentionally not part of `all` or the scheduled workflow anymore. Overpass is slow and unreliable inside Azure Static Web Apps, and OSM trail records often have weak distance/difficulty/parking data. Existing OSM records can remain as fallback coverage, but WTA/DNR/Parks should be treated as the useful data path.
 
-WTA sync is intentionally incremental (`limit=20` in the workflow) because it reads public WTA pages through Azure Static Web Apps, which can fail long requests near the 45-second mark. It prioritizes trails missing WTA stats or permit data. WTA should overwrite broad OSM defaults for distance, elevation gain, difficulty, route type, and parking pass.
+WTA sync is intentionally incremental (`limit=20` in the workflow) because it reads public WTA pages through Azure Static Web Apps, which can fail long requests near the 45-second mark. It prioritizes trails missing WTA stats or permit data, and the workflow runs three short WTA passes so each scheduled run can safely add more WTA-backed records. WTA should overwrite broad OSM defaults for distance, elevation gain, difficulty, route type, and parking pass.
 
-WTA sync also seeds a small set of high-confidence WTA-native trail records for important hikes that broad OSM sync can miss or mis-measure, including Lake 22 and Heather Lake on the Mountain Loop Highway. Additional one-off WTA seeds can be requested with `sync-wta?seed=Trail%20Name`.
+WTA sync also seeds high-confidence WTA-native trail records for important hikes that broad OSM sync can miss or mis-measure, including Lake 22 and Heather Lake on the Mountain Loop Highway. It also walks the WTA hike-search index with a Cosmos-backed cursor (`sync-wta?index=true&seedLimit=8`), so repeated scheduled runs gradually replace weak OSM-only records with real WTA trail stats. Additional one-off WTA seeds can be requested with `sync-wta?seed=Trail%20Name`.
 
-The trail read APIs also apply a small authoritative correction table for known WTA-backed records so stale OSM defaults like `3 miles / Easy` do not leak through while Cosmos is catching up.
+The trail read APIs also apply a small authoritative correction table for known WTA-backed records and hide uncorrected low-confidence OSM defaults like `3 miles / Easy / 0 ft gain` unless `includeLowConfidence=true` is passed. This prevents fake-looking fallback stats from showing as real trail data while Cosmos is catching up.
 
 ## Build And Test
 

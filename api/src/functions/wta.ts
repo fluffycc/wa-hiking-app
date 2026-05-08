@@ -9,6 +9,10 @@ const DEFAULT_LIMIT = 10
 const MAX_LIMIT = 20
 const DETAIL_BATCH_SIZE = 1
 const MAX_RUN_MS = 25_000
+const DEFAULT_INDEX_SEED_LIMIT = 8
+const MAX_INDEX_SEED_LIMIT = 15
+const WTA_INDEX_STATE_ID = 'wta-index-state'
+const WTA_INDEX_STATE_PK = 'system'
 const USER_AGENT = 'WAHikingApp/1.0 (contact: you@example.com)'
 const textCache = new Map<string, string>()
 const DEFAULT_WTA_SEEDS = [
@@ -78,6 +82,14 @@ interface WTAEnrichment {
     source: 'WTA'
     reportedISO: string
   }
+}
+
+interface WtaIndexState {
+  id: string
+  pk: string
+  docType: 'wtaIndexState'
+  nextOffset: number
+  updatedAtISO: string
 }
 
 function getSyncTokenFromRequest(req: HttpRequest): string | null {
@@ -227,6 +239,35 @@ function extractSearchLinks(html: string): Array<{ url: string; name: string }> 
   }
 
   return [...links].map(([url, name]) => ({ url, name }))
+}
+
+function wtaIndexUrl(offset: number): string {
+  const url = new URL(WTA_SEARCH_URL)
+  url.searchParams.set('title', '')
+  url.searchParams.set('region', 'all')
+  url.searchParams.set('subregion', 'all')
+  url.searchParams.append('mileage:list:float', '0.0')
+  url.searchParams.append('mileage:list:float', '30.0')
+  url.searchParams.append('elevationgain:list:int', '0')
+  url.searchParams.append('elevationgain:list:int', '10000')
+  url.searchParams.set('show_incomplete', 'on')
+  url.searchParams.set('sort', 'title')
+  url.searchParams.set('b_start:int', String(offset))
+  return url.toString()
+}
+
+async function fetchWtaIndexSeeds(offset: number): Promise<Array<{ url: string; name: string }>> {
+  const html = await fetchTextWithTimeout(wtaIndexUrl(offset))
+  const seen = new Set<string>()
+  const seeds: Array<{ url: string; name: string }> = []
+
+  for (const link of extractSearchLinks(html)) {
+    if (!link.name || seen.has(link.url)) continue
+    seen.add(link.url)
+    seeds.push(link)
+  }
+
+  return seeds
 }
 
 async function findWtaTrail(trailName: string): Promise<{ url: string; name: string } | null> {
@@ -612,6 +653,65 @@ async function seedWtaTrail(container: any, seed: { name: string; url?: string }
   return true
 }
 
+async function readWtaIndexOffset(container: any): Promise<number> {
+  try {
+    const { resource } = await container.item(WTA_INDEX_STATE_ID, WTA_INDEX_STATE_PK).read()
+    const state = resource as WtaIndexState | undefined
+    return Number.isFinite(state?.nextOffset) ? Math.max(0, Number(state?.nextOffset)) : 0
+  } catch {
+    return 0
+  }
+}
+
+async function writeWtaIndexOffset(container: any, nextOffset: number): Promise<void> {
+  await container.items.upsert({
+    id: WTA_INDEX_STATE_ID,
+    pk: WTA_INDEX_STATE_PK,
+    docType: 'wtaIndexState',
+    nextOffset,
+    updatedAtISO: new Date().toISOString(),
+  } satisfies WtaIndexState)
+}
+
+async function seedFromWtaIndex(
+  container: any,
+  seedLimit: number,
+  startedAt: number,
+  context: InvocationContext,
+  requestId: string
+): Promise<{ indexChecked: number; indexSeeded: number; indexErrors: number; nextOffset: number }> {
+  const offset = await readWtaIndexOffset(container)
+  let seeds: Array<{ url: string; name: string }> = []
+
+  try {
+    seeds = await fetchWtaIndexSeeds(offset)
+  } catch (err) {
+    context.warn(`[WTA][${requestId}] index fetch failed at offset ${offset}`, err)
+    return { indexChecked: 0, indexSeeded: 0, indexErrors: 1, nextOffset: offset }
+  }
+
+  let indexChecked = 0
+  let indexSeeded = 0
+  let indexErrors = 0
+
+  for (const seed of seeds.slice(0, seedLimit)) {
+    if (Date.now() - startedAt > MAX_RUN_MS - FETCH_TIMEOUT_MS * 2) break
+
+    indexChecked++
+    try {
+      if (await seedWtaTrail(container, seed)) indexSeeded++
+    } catch (err) {
+      indexErrors++
+      context.warn(`[WTA][${requestId}] index seed failed for ${seed.name}`, err)
+    }
+  }
+
+  const nextOffset = seeds.length ? offset + indexChecked : 0
+  await writeWtaIndexOffset(container, nextOffset)
+
+  return { indexChecked, indexSeeded, indexErrors, nextOffset }
+}
+
 async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const startedAt = Date.now()
   const requestId = Math.random().toString(36).slice(2)
@@ -625,6 +725,12 @@ async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Pro
     const limitParam = Number(url.searchParams.get('limit') ?? DEFAULT_LIMIT)
     const force = url.searchParams.get('force') === 'true'
     const name = url.searchParams.get('name')?.trim()
+    const seedIndex = url.searchParams.get('index') !== 'false'
+    const indexSeedLimitParam = Number(url.searchParams.get('seedLimit') ?? DEFAULT_INDEX_SEED_LIMIT)
+    const indexSeedLimit = Math.min(
+      MAX_INDEX_SEED_LIMIT,
+      Math.max(0, Number.isFinite(indexSeedLimitParam) ? indexSeedLimitParam : DEFAULT_INDEX_SEED_LIMIT)
+    )
     const limit = Math.min(MAX_LIMIT, Math.max(1, Number.isFinite(limitParam) ? limitParam : DEFAULT_LIMIT))
     const container = getTrailsContainer()
     const seedNames = url.searchParams.getAll('seed').map(seed => seed.trim()).filter(Boolean)
@@ -637,6 +743,10 @@ async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Pro
 
     let seeded = 0
     let seedErrors = 0
+    let indexChecked = 0
+    let indexSeeded = 0
+    let indexErrors = 0
+    let indexNextOffset = 0
 
     for (const seed of seeds) {
       if (Date.now() - startedAt > MAX_RUN_MS - FETCH_TIMEOUT_MS * 3) break
@@ -647,6 +757,14 @@ async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Pro
         seedErrors++
         context.warn(`[WTA][${requestId}] seed failed for ${seed.name}`, err)
       }
+    }
+
+    if (!name && seedIndex && indexSeedLimit > 0 && Date.now() - startedAt < MAX_RUN_MS - FETCH_TIMEOUT_MS * 2) {
+      const indexResult = await seedFromWtaIndex(container, indexSeedLimit, startedAt, context, requestId)
+      indexChecked = indexResult.indexChecked
+      indexSeeded = indexResult.indexSeeded
+      indexErrors = indexResult.indexErrors
+      indexNextOffset = indexResult.nextOffset
     }
 
     const where = name
@@ -719,6 +837,10 @@ async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Pro
         updated,
         seeded,
         seedErrors,
+        indexChecked,
+        indexSeeded,
+        indexErrors,
+        indexNextOffset,
         errors,
         stoppedEarly,
         durationMs: Date.now() - startedAt,
