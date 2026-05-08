@@ -69,24 +69,22 @@ export function FilterSheet({ open, onClose }: Props) {
             </div>
           </div>
 
-          {/* Access */}
-          <div>
-            <p className="font-display font-semibold text-sm text-trail-dark mb-2">Get There</p>
-            <div className="flex gap-2 flex-wrap">
-              {(['sedan_ok', 'rough', 'high_clearance', '4x4_only', 'any'] as const).map(v => (
-                <Toggle key={v} label={v === 'any' ? 'Any road' : v.replace(/_/g, ' ')}
-                  active={activeFilters.accessLevel === v}
-                  onToggle={() => setFilter('accessLevel', v)} />
-              ))}
-            </div>
-          </div>
-
           {/* Parking */}
           <div>
             <p className="font-display font-semibold text-sm text-trail-dark mb-2">Costs / Passes</p>
             <div className="flex gap-2 flex-wrap">
               {(['free', 'discover_pass', 'nw_forest_pass', 'national_park_fee', 'any'] as const).map(v => (
-                <Toggle key={v} label={v === 'any' ? 'Any pass' : v.replace(/_/g, ' ')}
+                <Toggle
+                  key={v}
+                  label={v === 'any'
+                    ? 'Any pass'
+                    : v === 'discover_pass'
+                    ? 'Discover Pass'
+                    : v === 'nw_forest_pass'
+                    ? 'NW Forest Pass'
+                    : v === 'national_park_fee'
+                    ? 'National park fee'
+                    : 'Free parking'}
                   active={activeFilters.parkingType === v}
                   onToggle={() => setFilter('parkingType', v)} />
               ))}

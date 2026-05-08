@@ -39,6 +39,11 @@ function alertSuggestsClosure(message: string): boolean {
   return /\b(closed|closure|impassable|not accessible|no access|blocked)\b/i.test(message)
 }
 
+function alertIsTrailClosure(alert: NonNullable<Trail['alerts']>[number]): boolean {
+  if (alert.source?.toLowerCase() === 'wsdot') return false
+  return alert.type === 'closure' || alertSuggestsClosure(alert.message)
+}
+
 function alertSuggestsClosureOrSnow(message: string): boolean {
   return /\b(closed|closure|impassable|snow|avalanche|winter)\b/i.test(message)
 }
@@ -46,12 +51,12 @@ function alertSuggestsClosureOrSnow(message: string): boolean {
 function hasSnowOrClosureRisk(trail: Trail, activeAlerts: NonNullable<Trail['alerts']>): boolean {
   return (
     trail.conditions.snow === 'significant' ||
-    activeAlerts.some(alert => alert.type === 'closure' || alertSuggestsClosureOrSnow(alert.message))
+    activeAlerts.some(alert => alertIsTrailClosure(alert) || alertSuggestsClosureOrSnow(alert.message))
   )
 }
 
 function getAccessStatus(trail: Trail, activeAlerts: NonNullable<Trail['alerts']>) {
-  const hasClosure = activeAlerts.some(alert => alert.type === 'closure' || alertSuggestsClosure(alert.message))
+  const hasClosure = activeAlerts.some(alertIsTrailClosure)
 
   if (hasClosure) {
     return {
@@ -137,15 +142,20 @@ export function TrailDetails({ trail }: Props) {
 
       {activeAlerts.length > 0 && (
         <div className="py-3 space-y-2">
-          {activeAlerts.map((alert, i) => (
-            <div key={i} className={`rounded-xl px-3 py-2 text-sm border
-              ${alert.type === 'closure' ? 'bg-red-50 border-red-200 text-red-800' :
-                alert.type === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-800' :
-                'bg-blue-50 border-blue-200 text-blue-800'}`}>
-              <strong className="capitalize">{alert.type}:</strong> {alert.message}
-              <span className="text-xs opacity-60 ml-1">- {alert.source}</span>
-            </div>
-          ))}
+          {activeAlerts.map((alert, i) => {
+            const isTrailClosure = alertIsTrailClosure(alert)
+            const label = isTrailClosure ? 'closure' : alert.type === 'info' ? 'info' : 'warning'
+
+            return (
+              <div key={i} className={`rounded-xl px-3 py-2 text-sm border
+                ${isTrailClosure ? 'bg-red-50 border-red-200 text-red-800' :
+                  label === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-800' :
+                  'bg-blue-50 border-blue-200 text-blue-800'}`}>
+                <strong className="capitalize">{label}:</strong> {alert.message}
+                <span className="text-xs opacity-60 ml-1">- {alert.source}</span>
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -245,9 +255,6 @@ export function TrailDetails({ trail }: Props) {
         )}
       </Section>
 
-      <Section title="Recent Trip Reports">
-        <p className="text-sm text-trail-stone italic">No reports yet. Be the first!</p>
-      </Section>
     </div>
   )
 }

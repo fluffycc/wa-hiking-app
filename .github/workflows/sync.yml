@@ -11,7 +11,7 @@ on:
         required: true
         default: 'conditions'
         type: choice
-        options: [conditions, osm, wadnr, waparks, all]
+        options: [conditions, osm, wadnr, waparks, wta, all]
 
 jobs:
   sync-osm:
@@ -79,17 +79,40 @@ jobs:
           echo "Status: $STATUS | Body: $BODY"
           [ "$STATUS" = "200" ] || exit 1
 
-  sync-conditions:
-    name: Sync Conditions (NOAA + WSDOT)
+  sync-wta:
+    name: Sync WTA Enrichment
     runs-on: ubuntu-latest
     needs: sync-waparks
     if: |
       always() &&
       (
-        (github.event_name == 'schedule' && github.event.schedule == '0 */6 * * *') ||
         (github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1' && needs.sync-waparks.result == 'success') ||
-        (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'conditions') ||
+        (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'wta') ||
         (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'all' && needs.sync-waparks.result == 'success')
+      )
+    steps:
+      - name: Trigger WTA enrichment
+        run: |
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "${{ secrets.SWA_API_URL }}/api/sync-wta" \
+            -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
+            -H "Content-Type: application/json" --max-time 600)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          STATUS=$(echo "$RESPONSE" | tail -1 | cut -d: -f2)
+          echo "Status: $STATUS | Body: $BODY"
+          [ "$STATUS" = "200" ] || exit 1
+
+  sync-conditions:
+    name: Sync Conditions (NOAA + WSDOT)
+    runs-on: ubuntu-latest
+    needs: sync-wta
+    if: |
+      always() &&
+      (
+        (github.event_name == 'schedule' && github.event.schedule == '0 */6 * * *') ||
+        (github.event_name == 'schedule' && github.event.schedule == '0 8 * * 1' && needs.sync-wta.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'conditions') ||
+        (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'all' && needs.sync-wta.result == 'success')
       )
     steps:
       - name: Trigger conditions sync

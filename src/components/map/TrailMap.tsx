@@ -38,13 +38,16 @@ function textSuggestsClosure(value?: string): boolean {
   return !!value && /\b(closed|closure|impassable|not accessible|no access|blocked)\b/i.test(value)
 }
 
+function alertIsTrailClosure(alert: NonNullable<Trail['alerts']>[number]): boolean {
+  if (alert.source?.toLowerCase() === 'wsdot') return false
+  return alert.type === 'closure' || textSuggestsClosure(alert.message)
+}
+
 function trailHasClosure(trail: Trail): boolean {
   const activeAlerts = trail.alerts?.filter(alertIsActive) ?? []
 
   return (
-    activeAlerts.some(alert => alert.type === 'closure' || textSuggestsClosure(alert.message)) ||
-    textSuggestsClosure(trail.access.notes) ||
-    textSuggestsClosure(trail.roadCondition?.notes) ||
+    activeAlerts.some(alertIsTrailClosure) ||
     trail.conditions.notes.some(textSuggestsClosure)
   )
 }

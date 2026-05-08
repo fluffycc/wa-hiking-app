@@ -164,10 +164,6 @@ async function getWSDOTPasses(): Promise<Map<string, string>> {
   return alerts
 }
 
-function alertIndicatesClosure(message: string): boolean {
-  return /\b(closed|closure|impassable|not accessible|no access|blocked)\b/i.test(message)
-}
-
 async function conditionsSyncHandler(
   req: HttpRequest,
   context: InvocationContext
@@ -291,8 +287,8 @@ async function conditionsSyncHandler(
 
           const derived = deriveConditions(periods, trailheadElev, summitElev)
 
-          const trailAlerts: Array<{
-            type: 'closure' | 'warning'
+          const wsdotAlerts: Array<{
+            type: 'warning'
             message: string
             source: string
             reportedISO: string
@@ -303,14 +299,26 @@ async function conditionsSyncHandler(
               (trail.name && trail.name.toLowerCase().includes(passName)) ||
               (trail.region && trail.region.toLowerCase().includes(passName.split(' ')[0]))
             ) {
-              trailAlerts.push({
-                type: alertIndicatesClosure(alertMsg) ? 'closure' : 'warning',
+              wsdotAlerts.push({
+                type: 'warning',
                 message: alertMsg,
                 source: 'WSDOT',
                 reportedISO: new Date().toISOString(),
               })
             }
           }
+
+          const existingAlerts = (trail.alerts ?? []).filter((alert): alert is {
+            type: 'closure' | 'warning' | 'info'
+            message: string
+            source: string
+            reportedISO: string
+            expiresISO?: string
+          } => (
+            typeof alert === 'object' &&
+            alert !== null &&
+            (alert as { source?: string }).source !== 'WSDOT'
+          ))
 
           await container.item(trail.id, trail.pk ?? trail.region ?? region).patch([
             {
@@ -330,7 +338,7 @@ async function conditionsSyncHandler(
             {
               op: 'set',
               path: '/alerts',
-              value: trailAlerts.length ? trailAlerts : trail.alerts ?? [],
+              value: [...existingAlerts, ...wsdotAlerts],
             },
           ])
 

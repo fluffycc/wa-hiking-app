@@ -29,6 +29,7 @@ interface TrailStore {
   hasMore:        boolean
   viewportBounds: TrailBounds | null
   loadTrails:     (bounds?: TrailBounds) => Promise<void>
+  focusTrail:     (trail: Trail) => void
   setSearchQuery: (q: string) => void
   setSortKey:     (k: SortKey) => void
   setFilter:      <K extends keyof FilterState>(key: K, value: FilterState[K]) => void
@@ -59,10 +60,9 @@ export const useTrailStore = create<TrailStore>((set, get) => ({
     const requestSeq = ++_loadSeq
     const state = get()
     const nextBounds = bounds ?? state.viewportBounds ?? undefined
-    const isInitialLoad = state.trails.length === 0
 
     set({
-      loading: isInitialLoad,
+      loading: true,
       error: null,
       viewportBounds: nextBounds ?? null,
     })
@@ -131,6 +131,16 @@ export const useTrailStore = create<TrailStore>((set, get) => ({
       }
     }
   },
+
+  focusTrail: (trail) => set(s => {
+    const trails = [trail, ...s.trails.filter(t => t.id !== trail.id)].slice(0, VIEWPORT_TRAIL_LIMIT)
+    const filtered = deriveFiltered(trails, s.searchQuery, s.activeFilters, s.sortKey)
+    return {
+      trails,
+      filteredTrails: filtered.some(t => t.id === trail.id) ? filtered : [trail, ...filtered],
+      totalTrails: Math.max(s.totalTrails, trails.length),
+    }
+  }),
 
   setSearchQuery: (searchQuery) => set(s => ({
     searchQuery,

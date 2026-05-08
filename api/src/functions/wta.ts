@@ -1,0 +1,353 @@
+import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
+import { getTrailsContainer } from '../../shared/cosmosClient'
+
+const WTA_SEARCH_URL = 'https://www.wta.org/go-outside/hikes/hike_search'
+const FETCH_TIMEOUT_MS = 45_000
+const DEFAULT_LIMIT = 80
+const MAX_LIMIT = 200
+const DETAIL_BATCH_SIZE = 4
+const USER_AGENT = 'WAHikingApp/1.0 (contact: you@example.com)'
+
+type ParkingPassType = 'free' | 'discover_pass' | 'nw_forest_pass' | 'national_park_fee' | 'unknown'
+type AccessLevel = 'sedan_ok' | 'rough' | 'high_clearance' | '4x4_only' | 'unknown'
+
+interface TrailProjection {
+  id: string
+  pk?: string
+  name: string
+  region?: string
+  parking?: {
+    type?: ParkingPassType
+    notes?: string
+    confidence?: string
+  }
+  access?: {
+    level?: AccessLevel
+    notes?: string
+    confidence?: string
+  }
+  roadCondition?: {
+    surface?: string
+    condition?: string
+    notes?: string
+    confidence?: string
+    lastUpdatedISO?: string
+  }
+  alerts?: Array<{
+    type: 'closure' | 'warning' | 'info'
+    message: string
+    source: string
+    expiresISO?: string
+    reportedISO: string
+  }>
+}
+
+interface WTAEnrichment {
+  url: string
+  wtaName: string
+  parkingLabel?: string
+  parkingType?: ParkingPassType
+  accessLevel?: AccessLevel
+  roadNotes?: string
+  alert?: {
+    type: 'closure' | 'warning'
+    message: string
+    source: 'WTA'
+    reportedISO: string
+  }
+}
+
+function getSyncTokenFromRequest(req: HttpRequest): string | null {
+  const token =
+    req.headers.get('x-sync-token') ??
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ??
+    new URL(req.url).searchParams.get('token')
+
+  return token?.trim() || null
+}
+
+function validateSyncToken(req: HttpRequest): boolean {
+  const token = getSyncTokenFromRequest(req)
+  const secret =
+    process.env['SYNC_SECRET_TOKEN'] ??
+    process.env['SYNC_TOKEN'] ??
+    process.env['SYNC_SECRET']
+
+  return !!token && !!secret && token === secret
+}
+
+async function fetchTextWithTimeout(url: string): Promise<string> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: controller.signal,
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`)
+    return await res.text()
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function mapInBatches<T, R>(
+  items: T[],
+  batchSize: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = []
+  for (let i = 0; i < items.length; i += batchSize) {
+    results.push(...await Promise.all(items.slice(i, i + batchSize).map(worker)))
+  }
+  return results
+}
+
+function decodeHtml(value: string): string {
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&#039;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+}
+
+function stripTags(value: string): string {
+  return decodeHtml(value.replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function normalizeName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\btrail\b/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function extractSearchLinks(html: string): Array<{ url: string; name: string }> {
+  const links = new Map<string, string>()
+  const pattern = /<a[^>]+href="(https:\/\/www\.wta\.org\/go-hiking\/hikes\/[^"#?]+)"[^>]*>([\s\S]*?)<\/a>/g
+
+  for (const match of html.matchAll(pattern)) {
+    const name = stripTags(match[2])
+    if (name) links.set(match[1], name)
+  }
+
+  return [...links].map(([url, name]) => ({ url, name }))
+}
+
+async function findWtaTrail(trailName: string): Promise<{ url: string; name: string } | null> {
+  const url = new URL(WTA_SEARCH_URL)
+  url.searchParams.set('searchabletext', trailName)
+
+  const html = await fetchTextWithTimeout(url.toString())
+  const links = extractSearchLinks(html)
+  if (!links.length) return null
+
+  const target = normalizeName(trailName)
+  return (
+    links.find(link => normalizeName(link.name) === target) ??
+    links.find(link => {
+      const candidate = normalizeName(link.name)
+      return candidate.includes(target) || target.includes(candidate)
+    }) ??
+    links[0]
+  )
+}
+
+function extractSection(html: string, title: string): string | undefined {
+  const pattern = new RegExp(`<h[2-4][^>]*>\\s*${title}\\s*<\\/h[2-4]>([\\s\\S]*?)(?=<h[2-4][^>]*>|$)`, 'i')
+  const match = html.match(pattern)
+  return match?.[1] ? stripTags(match[1]) : undefined
+}
+
+function extractParkingLabel(html: string): string | undefined {
+  const match = html.match(/Parking Pass\/Entry Fee<\/h4>([\s\S]*?)(?=<\/div>|<h[2-4]|$)/i)
+  return match?.[1] ? stripTags(match[1]) : undefined
+}
+
+function parkingTypeFromLabel(label?: string): ParkingPassType | undefined {
+  if (!label) return undefined
+  if (/northwest forest|nw forest/i.test(label)) return 'nw_forest_pass'
+  if (/discover/i.test(label)) return 'discover_pass'
+  if (/national park|america the beautiful|entrance fee/i.test(label)) return 'national_park_fee'
+  if (/\bnone\b|no pass|no fee|free/i.test(label)) return 'free'
+  return undefined
+}
+
+function accessFromRoadNotes(notes?: string): AccessLevel | undefined {
+  if (!notes) return undefined
+  if (/\b(4wd|4x4|four wheel|high-clearance|high clearance)\b/i.test(notes)) return 'high_clearance'
+  if (/\b(potholes?|rough|rutted|washout|washed out|primitive road|gravel road)\b/i.test(notes)) return 'rough'
+  return undefined
+}
+
+function firstUsefulSentence(text?: string): string | undefined {
+  if (!text) return undefined
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  const sentence = normalized.match(/[^.!?]*(closed|closure|inaccessible|road work|potholes?|rough|washout|washed out)[^.!?]*[.!?]?/i)?.[0]
+  return sentence?.trim().slice(0, 320)
+}
+
+function buildAlert(beforeYouGo?: string): WTAEnrichment['alert'] {
+  const sentence = firstUsefulSentence(beforeYouGo)
+  if (!sentence) return undefined
+
+  const isTrailClosure =
+    /\btrail\b[^.]{0,80}\b(closed|closure|inaccessible)\b/i.test(sentence) ||
+    /\b(closed|closure|inaccessible)\b[^.]{0,80}\btrail\b/i.test(sentence)
+
+  return {
+    type: isTrailClosure ? 'closure' : 'warning',
+    message: sentence,
+    source: 'WTA',
+    reportedISO: new Date().toISOString(),
+  }
+}
+
+async function enrichFromWta(trail: TrailProjection): Promise<WTAEnrichment | null> {
+  const match = await findWtaTrail(trail.name)
+  if (!match) return null
+
+  const html = await fetchTextWithTimeout(match.url)
+  const parkingLabel = extractParkingLabel(html)
+  const gettingThere = extractSection(html, 'Getting There')
+  const beforeYouGo = extractSection(html, 'Before You Go')
+  const roadNotes = firstUsefulSentence(gettingThere)
+
+  return {
+    url: match.url,
+    wtaName: match.name,
+    parkingLabel,
+    parkingType: parkingTypeFromLabel(parkingLabel),
+    accessLevel: accessFromRoadNotes(roadNotes),
+    roadNotes,
+    alert: buildAlert(beforeYouGo),
+  }
+}
+
+function patchForEnrichment(trail: TrailProjection, enrichment: WTAEnrichment) {
+  const ops: Array<{ op: 'set'; path: string; value: unknown }> = [
+    {
+      op: 'set',
+      path: '/wta',
+      value: {
+        name: enrichment.wtaName,
+        url: enrichment.url,
+        syncedAt: new Date().toISOString(),
+      },
+    },
+  ]
+
+  if (enrichment.parkingType) {
+    ops.push({
+      op: 'set',
+      path: '/parking',
+      value: {
+        ...(trail.parking ?? {}),
+        type: enrichment.parkingType,
+        notes: enrichment.parkingLabel ? `WTA: ${enrichment.parkingLabel}` : trail.parking?.notes,
+        confidence: 'high',
+      },
+    })
+  }
+
+  if (enrichment.accessLevel || enrichment.roadNotes) {
+    const accessLevel = enrichment.accessLevel ?? trail.access?.level ?? 'unknown'
+    ops.push({
+      op: 'set',
+      path: '/access',
+      value: {
+        ...(trail.access ?? {}),
+        level: accessLevel,
+        notes: enrichment.roadNotes ? `WTA: ${enrichment.roadNotes}` : trail.access?.notes,
+        confidence: enrichment.roadNotes ? 'high' : trail.access?.confidence ?? 'medium',
+      },
+    })
+    ops.push({
+      op: 'set',
+      path: '/roadCondition',
+      value: {
+        ...(trail.roadCondition ?? {}),
+        surface: trail.roadCondition?.surface ?? 'unknown',
+        condition: accessLevel === 'rough' || accessLevel === 'high_clearance' ? 'rough' : trail.roadCondition?.condition ?? 'unknown',
+        notes: enrichment.roadNotes ? `WTA: ${enrichment.roadNotes}` : trail.roadCondition?.notes,
+        confidence: enrichment.roadNotes ? 'high' : trail.roadCondition?.confidence ?? 'medium',
+        lastUpdatedISO: new Date().toISOString(),
+      },
+    })
+  }
+
+  if (enrichment.alert) {
+    const alerts = (trail.alerts ?? []).filter(alert => alert.source !== 'WTA')
+    ops.push({
+      op: 'set',
+      path: '/alerts',
+      value: [...alerts, enrichment.alert],
+    })
+  }
+
+  return ops
+}
+
+async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  if (!validateSyncToken(req)) return { status: 401, jsonBody: { ok: false, error: 'Unauthorized' } }
+
+  const limitParam = Number(new URL(req.url).searchParams.get('limit') ?? DEFAULT_LIMIT)
+  const limit = Math.min(MAX_LIMIT, Math.max(1, Number.isFinite(limitParam) ? limitParam : DEFAULT_LIMIT))
+  const container = getTrailsContainer()
+
+  const querySpec = {
+    query: [
+      `SELECT TOP ${limit} t.id, t.pk, t.name, t.region, t.parking, t.access, t.roadCondition, t.alerts`,
+      'FROM t',
+      "WHERE NOT IS_DEFINED(t.wta) OR t.parking.type = 'unknown' OR t.access.level = 'unknown'",
+    ].join(' '),
+  }
+
+  const { resources } = await container.items.query(querySpec, { enableCrossPartitionQuery: true }).fetchAll()
+  const trails = (resources ?? []) as TrailProjection[]
+  let matched = 0
+  let updated = 0
+  let errors = 0
+
+  await mapInBatches(trails, DETAIL_BATCH_SIZE, async (trail) => {
+    try {
+      const enrichment = await enrichFromWta(trail)
+      if (!enrichment) return
+
+      matched++
+      const ops = patchForEnrichment(trail, enrichment)
+      if (ops.length <= 1) return
+
+      await container.item(trail.id, trail.pk ?? trail.region).patch(ops)
+      updated++
+    } catch (err) {
+      errors++
+      context.warn(`WTA enrichment failed for ${trail.name}`, err)
+    }
+  })
+
+  return {
+    status: 200,
+    jsonBody: {
+      ok: true,
+      checked: trails.length,
+      matched,
+      updated,
+      errors,
+    },
+  }
+}
+
+app.http('sync-wta', {
+  methods: ['POST', 'GET'],
+  authLevel: 'anonymous',
+  handler: wtaSyncHandler,
+})
