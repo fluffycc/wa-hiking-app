@@ -19,6 +19,13 @@ jobs:
         with:
           submodules: true
           lfs: false
+      - name: Verify API build
+        run: |
+          cd api
+          npm install --no-package-lock
+          npm run build
+          test -f host.json
+          test -f dist/index.js
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
