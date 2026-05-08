@@ -94,7 +94,7 @@ jobs:
       - name: Trigger WTA enrichment
         run: |
           RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-            -X POST "${{ secrets.SWA_API_URL }}/api/sync-wta" \
+            -X POST "${{ secrets.SWA_API_URL }}/api/sync-wta?limit=10" \
             -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
             -H "Content-Type: application/json" --max-time 600)
           BODY=$(echo "$RESPONSE" | sed '$d')

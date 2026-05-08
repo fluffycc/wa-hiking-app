@@ -2,10 +2,11 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { getTrailsContainer } from '../../shared/cosmosClient'
 
 const WTA_SEARCH_URL = 'https://www.wta.org/go-outside/hikes/hike_search'
-const FETCH_TIMEOUT_MS = 45_000
-const DEFAULT_LIMIT = 80
-const MAX_LIMIT = 200
-const DETAIL_BATCH_SIZE = 4
+const FETCH_TIMEOUT_MS = 20_000
+const DEFAULT_LIMIT = 10
+const MAX_LIMIT = 50
+const DETAIL_BATCH_SIZE = 2
+const MAX_RUN_MS = 45_000
 const USER_AGENT = 'WAHikingApp/1.0 (contact: you@example.com)'
 
 type ParkingPassType = 'free' | 'discover_pass' | 'nw_forest_pass' | 'national_park_fee' | 'unknown'
@@ -241,6 +242,9 @@ function patchForEnrichment(trail: TrailProjection, enrichment: WTAEnrichment) {
         name: enrichment.wtaName,
         url: enrichment.url,
         syncedAt: new Date().toISOString(),
+        status: 'matched',
+        parkingChecked: true,
+        accessChecked: true,
       },
     },
   ]
@@ -296,53 +300,107 @@ function patchForEnrichment(trail: TrailProjection, enrichment: WTAEnrichment) {
   return ops
 }
 
-async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-  if (!validateSyncToken(req)) return { status: 401, jsonBody: { ok: false, error: 'Unauthorized' } }
-
-  const limitParam = Number(new URL(req.url).searchParams.get('limit') ?? DEFAULT_LIMIT)
-  const limit = Math.min(MAX_LIMIT, Math.max(1, Number.isFinite(limitParam) ? limitParam : DEFAULT_LIMIT))
-  const container = getTrailsContainer()
-
-  const querySpec = {
-    query: [
-      `SELECT TOP ${limit} t.id, t.pk, t.name, t.region, t.parking, t.access, t.roadCondition, t.alerts`,
-      'FROM t',
-      "WHERE NOT IS_DEFINED(t.wta) OR t.parking.type = 'unknown' OR t.access.level = 'unknown'",
-    ].join(' '),
-  }
-
-  const { resources } = await container.items.query(querySpec, { enableCrossPartitionQuery: true }).fetchAll()
-  const trails = (resources ?? []) as TrailProjection[]
-  let matched = 0
-  let updated = 0
-  let errors = 0
-
-  await mapInBatches(trails, DETAIL_BATCH_SIZE, async (trail) => {
-    try {
-      const enrichment = await enrichFromWta(trail)
-      if (!enrichment) return
-
-      matched++
-      const ops = patchForEnrichment(trail, enrichment)
-      if (ops.length <= 1) return
-
-      await container.item(trail.id, trail.pk ?? trail.region).patch(ops)
-      updated++
-    } catch (err) {
-      errors++
-      context.warn(`WTA enrichment failed for ${trail.name}`, err)
-    }
-  })
-
-  return {
-    status: 200,
-    jsonBody: {
-      ok: true,
-      checked: trails.length,
-      matched,
-      updated,
-      errors,
+function patchForWtaMiss() {
+  return [
+    {
+      op: 'set' as const,
+      path: '/wta',
+      value: {
+        syncedAt: new Date().toISOString(),
+        status: 'not_found',
+        parkingChecked: true,
+        accessChecked: true,
+      },
     },
+  ]
+}
+
+async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const startedAt = Date.now()
+  const requestId = Math.random().toString(36).slice(2)
+
+  try {
+    if (!validateSyncToken(req)) {
+      return { status: 401, jsonBody: { ok: false, error: 'Unauthorized', requestId } }
+    }
+
+    const url = new URL(req.url)
+    const limitParam = Number(url.searchParams.get('limit') ?? DEFAULT_LIMIT)
+    const force = url.searchParams.get('force') === 'true'
+    const limit = Math.min(MAX_LIMIT, Math.max(1, Number.isFinite(limitParam) ? limitParam : DEFAULT_LIMIT))
+    const container = getTrailsContainer()
+
+    const querySpec = {
+      query: [
+        `SELECT TOP ${limit} t.id, t.pk, t.name, t.region, t.parking, t.access, t.roadCondition, t.alerts`,
+        'FROM t',
+        force ? 'WHERE IS_DEFINED(t.name)' : 'WHERE IS_DEFINED(t.name) AND NOT IS_DEFINED(t.wta.syncedAt)',
+      ].join(' '),
+    }
+
+    context.log(`[WTA][${requestId}] query start limit=${limit} force=${force}`)
+    const { resources } = await container.items.query(querySpec, { enableCrossPartitionQuery: true }).fetchAll()
+    const trails = (resources ?? []) as TrailProjection[]
+    context.log(`[WTA][${requestId}] trails loaded: ${trails.length}`)
+
+    let checked = 0
+    let matched = 0
+    let updated = 0
+    let errors = 0
+    let stoppedEarly = false
+
+    await mapInBatches(trails, DETAIL_BATCH_SIZE, async (trail) => {
+      if (Date.now() - startedAt > MAX_RUN_MS) {
+        stoppedEarly = true
+        return
+      }
+
+      try {
+        const enrichment = await enrichFromWta(trail)
+        checked++
+
+        if (!enrichment) {
+          await container.item(trail.id, trail.pk ?? trail.region).patch(patchForWtaMiss())
+          updated++
+          return
+        }
+
+        matched++
+        const ops = patchForEnrichment(trail, enrichment)
+        await container.item(trail.id, trail.pk ?? trail.region).patch(ops)
+        updated++
+      } catch (err) {
+        errors++
+        context.warn(`[WTA][${requestId}] enrichment failed for ${trail.name}`, err)
+      }
+    })
+
+    return {
+      status: 200,
+      jsonBody: {
+        ok: true,
+        requestId,
+        checked,
+        matched,
+        updated,
+        errors,
+        stoppedEarly,
+        durationMs: Date.now() - startedAt,
+      },
+    }
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err))
+    context.error(`[WTA][${requestId}] fatal`, error)
+
+    return {
+      status: 500,
+      jsonBody: {
+        ok: false,
+        requestId,
+        error: error.message,
+        durationMs: Date.now() - startedAt,
+      },
+    }
   }
 }
 
