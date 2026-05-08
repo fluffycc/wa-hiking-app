@@ -3,8 +3,8 @@ import { getTrailsContainer } from '../shared/cosmosClient'
 import { overlayRegionConditions } from '../shared/regionConditions'
 import { applyTrailCorrections, normalizeCorrectionName } from '../shared/trailCorrections'
 
-const CACHE_CONTROL = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600'
-const RESPONSE_CACHE_TTL_MS = 5 * 60 * 1000
+const CACHE_CONTROL = 'public, max-age=120, s-maxage=600, stale-while-revalidate=1800'
+const RESPONSE_CACHE_TTL_MS = 10 * 60 * 1000
 const RESPONSE_CACHE_MAX_ENTRIES = 200
 
 interface CachedTrailsResponse {
@@ -53,12 +53,12 @@ function trailQuality(trail: TrailDoc): number {
 }
 
 function hasLowConfidenceDefaultStats(trail: TrailDoc): boolean {
+  const source = String(trail.source ?? '').toLowerCase()
   return (
-    trail.source === 'osm' &&
-    trail.wta?.status !== 'matched' &&
     Number(trail.miles) === 3 &&
     Number(trail.elevationGainFt ?? 0) === 0 &&
-    trail.difficulty === 'Easy'
+    trail.wta?.statsAvailable !== true &&
+    (source === 'osm' || source === 'wta')
   )
 }
 
@@ -130,9 +130,9 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
   const offset = (page - 1) * limit
   const hasBounds = !!(p['north'] && p['south'] && p['east'] && p['west'])
   const rawFetchLimit = p['q']
-    ? Math.min(180, limit * 4 + 1)
+    ? Math.min(120, limit * 2 + 21)
     : hasBounds
-      ? Math.min(180, limit + 121)
+      ? Math.min(100, limit + 51)
       : limit + 1
   const requestCacheKey = getRequestCacheKey(req)
   const cached = responseCache.get(requestCacheKey)
@@ -150,6 +150,10 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
 
   const conditions: string[] = ["(NOT IS_DEFINED(t.docType) OR t.docType = 'trail')"]
   const params: { name: string; value: unknown }[] = []
+
+  if (p['includeLowConfidence'] !== 'true') {
+    conditions.push("NOT ((t.source = 'osm' OR t.source = 'wta') AND t.miles = 3 AND (NOT IS_DEFINED(t.elevationGainFt) OR t.elevationGainFt = 0) AND (NOT IS_DEFINED(t.wta.statsAvailable) OR t.wta.statsAvailable != true))")
+  }
 
   if (p['region']) {
     const regions = p['region'].split(',').map((r: string, i: number) => {

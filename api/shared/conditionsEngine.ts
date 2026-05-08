@@ -31,10 +31,18 @@ function estimateFreezingLevelFt(surfaceTempF: number): number {
   return ((surfaceTempF - 32) / 3.5) * 1000
 }
 
+function trailIsWellBelowForecastSample(
+  summitElevFt: number,
+  forecastSampleElevFt?: number,
+): boolean {
+  return typeof forecastSampleElevFt === 'number' && forecastSampleElevFt - summitElevFt >= 750
+}
+
 export function deriveConditions(
   periods: NOAAForecastPeriod[],
   trailheadElevFt: number,
   summitElevFt: number,
+  forecastSampleElevFt?: number,
 ): DerivedConditions {
   const now = new Date()
   const month = now.getMonth() + 1 // 1-12
@@ -56,11 +64,16 @@ export function deriveConditions(
 
   // ── Snow ─────────────────────────────────────────────────────────────────
   const freezingLevelFt = estimateFreezingLevelFt(minTempF)
+  const belowRegionalSnowBand = trailIsWellBelowForecastSample(summitElevFt, forecastSampleElevFt)
+  const snowLevelNearTrail = freezingLevelFt <= summitElevFt + 750
   let snow: DerivedConditions['snow'] = 'none'
-  if (hasSnow || freezingLevelFt < trailheadElevFt) {
+  if (hasSnow && !belowRegionalSnowBand && snowLevelNearTrail && summitElevFt >= 3000) {
     snow = 'significant'
     notes.push('Bring microspikes or snowshoes')
-  } else if (freezingLevelFt < summitElevFt || month <= 5 && summitElevFt > 4500) {
+  } else if (
+    (hasSnow && snowLevelNearTrail && summitElevFt >= 2500) ||
+    (!hasSnow && month <= 5 && summitElevFt > 5000)
+  ) {
     snow = 'patchy'
     notes.push('Snow possible above mid-elevation')
   }

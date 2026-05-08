@@ -89,19 +89,33 @@ export function applyRegionConditionToTrail(trail: any, condition?: RegionCondit
 
   const trailheadElev = Number(trail.trailheadElevationFt ?? condition.sample?.elevFt ?? 1500)
   const summitElev = trailheadElev + Number(trail.elevationGainFt ?? 0)
-  const derived = deriveConditions(condition.periods, trailheadElev, summitElev)
+  const derived = deriveConditions(condition.periods, trailheadElev, summitElev, condition.sample?.elevFt)
+  const trailSnowSource = String(trail.conditions?.source ?? '').toLowerCase()
+  const trailSnowIsRecentWta =
+    trailSnowSource === 'wta_trip_report' &&
+    trail.conditions?.lastUpdatedISO &&
+    Date.now() - new Date(trail.conditions.lastUpdatedISO).getTime() < 14 * 24 * 60 * 60 * 1000
+  const snow = trailSnowIsRecentWta ? trail.conditions.snow : derived.snow
+  const mud = trailSnowIsRecentWta ? trail.conditions.mud : derived.mud
+  const notes = [
+    ...(trailSnowIsRecentWta ? trail.conditions.notes ?? [] : []),
+    ...derived.notes.filter(note => !(trailSnowIsRecentWta && /snow/i.test(note))),
+  ]
+  const overall = snow === 'significant' || snow === 'patchy' || mud === 'heavy'
+    ? 'caution'
+    : derived.overall
 
   return {
     ...trail,
     alerts,
     conditions: {
       ...(trail.conditions ?? {}),
-      overall: derived.overall,
-      snow: derived.snow,
-      mud: derived.mud,
+      overall,
+      snow,
+      mud,
       bugs: derived.bugs,
       weatherHint: derived.weatherHint,
-      notes: derived.notes,
+      notes,
       lastUpdatedISO: condition.updatedAtISO ?? derived.lastUpdatedISO,
     },
   }

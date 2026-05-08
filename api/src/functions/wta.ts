@@ -13,6 +13,7 @@ const DEFAULT_INDEX_SEED_LIMIT = 8
 const MAX_INDEX_SEED_LIMIT = 15
 const WTA_INDEX_STATE_ID = 'wta-index-state'
 const WTA_INDEX_STATE_PK = 'system'
+const TRIP_REPORT_FETCH_TIMEOUT_MS = 2_500
 const USER_AGENT = 'WAHikingApp/1.0 (contact: you@example.com)'
 const textCache = new Map<string, string>()
 const DEFAULT_WTA_SEEDS = [
@@ -25,6 +26,15 @@ type AccessLevel = 'sedan_ok' | 'rough' | 'high_clearance' | '4x4_only' | 'unkno
 type Difficulty = 'Easy' | 'Moderate' | 'Hard' | 'Strenuous'
 type RouteType = 'Loop' | 'OutAndBack' | 'PointToPoint'
 type LandOwner = 'DNR' | 'WDFW' | 'StateParks' | 'USFS' | 'NPS' | 'County' | 'City' | 'Other'
+type SnowCondition = 'none' | 'patchy' | 'significant'
+type MudCondition = 'dry' | 'some' | 'heavy'
+
+interface TrailConditionSnapshot {
+  snow?: SnowCondition
+  mud?: MudCondition
+  notes: string[]
+  reportedISO?: string
+}
 
 interface TrailProjection {
   id: string
@@ -76,6 +86,7 @@ interface WTAEnrichment {
   lat?: number
   lng?: number
   description?: string
+  latestConditions?: TrailConditionSnapshot
   alert?: {
     type: 'closure' | 'warning'
     message: string
@@ -111,12 +122,12 @@ function validateSyncToken(req: HttpRequest): boolean {
   return !!token && !!secret && token === secret
 }
 
-async function fetchTextWithTimeout(url: string): Promise<string> {
+async function fetchTextWithTimeout(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<string> {
   const cached = textCache.get(url)
   if (cached) return cached
 
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+  const timeout = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
     const res = await fetch(url, {
@@ -132,9 +143,9 @@ async function fetchTextWithTimeout(url: string): Promise<string> {
   }
 }
 
-async function tryFetchText(url: string): Promise<string | null> {
+async function tryFetchText(url: string, timeoutMs = FETCH_TIMEOUT_MS): Promise<string | null> {
   try {
-    return await fetchTextWithTimeout(url)
+    return await fetchTextWithTimeout(url, timeoutMs)
   } catch {
     return null
   }
@@ -166,6 +177,79 @@ function stripTags(value: string): string {
   return decodeHtml(value.replace(/<[^>]+>/g, ' '))
     .replace(/\s+/g, ' ')
     .trim()
+}
+
+function firstConditionSentence(text: string): string | undefined {
+  const normalized = text.replace(/\s+/g, ' ').trim()
+  return normalized.match(/[^.!?]*(snow|snow-free|snow free|mud|muddy|washout|closed|closure|clear)[^.!?]*[.!?]?/i)?.[0]
+    ?.trim()
+    .slice(0, 220)
+}
+
+function inferTripReportConditions(text: string): TrailConditionSnapshot | undefined {
+  const lower = text.toLowerCase()
+  const notes: string[] = []
+
+  let snow: SnowCondition | undefined
+  if (/\b(no snow|snow[-\s]?free|clear of snow|free of snow)\b/.test(lower)) {
+    snow = 'none'
+  } else if (/\bsnow is only\b[^.?!]*(back side|around the lake|melting fast)|\bonly\b[^.?!]*\bsnow\b[^.?!]*\bmelting fast\b/.test(lower)) {
+    snow = 'none'
+  } else if (/\b(deep snow|heavy snow|snowshoes?|posthol(?:e|ing)|fully snow covered|snow covered all|continuous snow)\b/.test(lower)) {
+    snow = 'significant'
+  } else if (/\b(snow|icy|ice|slush)\b/.test(lower)) {
+    snow = 'patchy'
+  }
+
+  let mud: MudCondition | undefined
+  if (/\b(very muddy|deep mud|muddy throughout|heavy mud)\b/.test(lower)) {
+    mud = 'heavy'
+  } else if (/\b(mud|muddy)\b/.test(lower)) {
+    mud = 'some'
+  } else if (/\b(dry trail|trail is dry|mostly dry)\b/.test(lower)) {
+    mud = 'dry'
+  }
+
+  const sentence = firstConditionSentence(text)
+  if (sentence) notes.push(`WTA trip report: ${sentence}`)
+
+  if (!snow && !mud && !notes.length) return undefined
+  return { snow, mud, notes }
+}
+
+function relatedTripReportsUrl(hikeUrl: string): string {
+  const url = new URL(hikeUrl)
+  url.pathname = `${url.pathname.replace(/\/+$/, '')}/@@related_tripreport_listing`
+  return url.toString()
+}
+
+async function fetchLatestTripReportConditions(hikeUrl: string): Promise<TrailConditionSnapshot | undefined> {
+  const html = await tryFetchText(relatedTripReportsUrl(hikeUrl), TRIP_REPORT_FETCH_TIMEOUT_MS)
+  if (!html) return undefined
+
+  const reports = html.split(/<div class="item">/).slice(1, 4)
+  const merged: TrailConditionSnapshot = { notes: [] }
+
+  for (const report of reports) {
+    const textBlock = report.match(/<div class="trip-report-full-text">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/i)?.[1]
+    if (!textBlock) continue
+
+    const inferred = inferTripReportConditions(stripTags(textBlock))
+    if (!inferred) continue
+
+    if (inferred.snow === 'significant' || (inferred.snow === 'patchy' && merged.snow !== 'significant') || (inferred.snow === 'none' && !merged.snow)) {
+      merged.snow = inferred.snow
+    }
+    if (inferred.mud === 'heavy' || (inferred.mud === 'some' && merged.mud !== 'heavy') || (inferred.mud === 'dry' && !merged.mud)) {
+      merged.mud = inferred.mud
+    }
+    merged.notes.push(...inferred.notes)
+  }
+
+  if (!merged.snow && !merged.mud && !merged.notes.length) return undefined
+  merged.reportedISO = new Date().toISOString()
+  merged.notes = [...new Set(merged.notes)].slice(0, 2)
+  return merged
 }
 
 function normalizeName(value: string): string {
@@ -352,6 +436,24 @@ function difficultyFromLabel(label?: string): Difficulty | undefined {
   return undefined
 }
 
+function difficultyFromStats(miles?: number, elevationGainFt?: number): Difficulty | undefined {
+  if (!miles || miles <= 0 || typeof elevationGainFt !== 'number') return undefined
+  if (miles <= 4 && elevationGainFt <= 700) return 'Easy'
+  if (miles <= 8 && elevationGainFt <= 2000) return 'Moderate'
+  if (miles <= 12 && elevationGainFt <= 3500) return 'Hard'
+  return 'Strenuous'
+}
+
+function hasUsableStats(enrichment: WTAEnrichment): boolean {
+  return !!(
+    enrichment.miles && enrichment.miles > 0 &&
+    (
+      typeof enrichment.elevationGainFt === 'number' ||
+      !!enrichment.difficulty
+    )
+  )
+}
+
 function routeTypeFromLength(lengthLabel?: string): RouteType | undefined {
   if (!lengthLabel) return undefined
   if (/loop/i.test(lengthLabel)) return 'Loop'
@@ -426,6 +528,7 @@ async function enrichmentFromMatch(match: { url: string; name: string }): Promis
   const gettingThere = extractSection(html, 'Getting There')
   const beforeYouGo = extractSection(html, 'Before You Go')
   const roadNotes = firstUsefulSentence(gettingThere)
+  const latestConditions = await fetchLatestTripReportConditions(match.url)
 
   return {
     url: match.url,
@@ -437,6 +540,7 @@ async function enrichmentFromMatch(match: { url: string; name: string }): Promis
     lat: coords?.lat,
     lng: coords?.lng,
     description: extractMetaDescription(html),
+    latestConditions,
     ...stats,
     alert: buildAlert(beforeYouGo),
   }
@@ -450,6 +554,8 @@ async function enrichFromWta(trail: TrailProjection): Promise<WTAEnrichment | nu
 }
 
 function patchForEnrichment(trail: TrailProjection, enrichment: WTAEnrichment) {
+  const statsAvailable = hasUsableStats(enrichment)
+  const difficulty = enrichment.difficulty ?? difficultyFromStats(enrichment.miles, enrichment.elevationGainFt)
   const ops: Array<{ op: 'set'; path: string; value: unknown }> = [
     {
       op: 'set',
@@ -465,6 +571,7 @@ function patchForEnrichment(trail: TrailProjection, enrichment: WTAEnrichment) {
         syncedAt: new Date().toISOString(),
         statsSyncedAt: new Date().toISOString(),
         status: 'matched',
+        statsAvailable,
         parkingChecked: true,
         accessChecked: true,
         statsChecked: true,
@@ -497,8 +604,8 @@ function patchForEnrichment(trail: TrailProjection, enrichment: WTAEnrichment) {
     ops.push({ op: 'set', path: '/trailheadElevationFt', value: enrichment.trailheadElevationFt })
   }
 
-  if (enrichment.difficulty) {
-    ops.push({ op: 'set', path: '/difficulty', value: enrichment.difficulty })
+  if (difficulty) {
+    ops.push({ op: 'set', path: '/difficulty', value: difficulty })
   }
 
   if (enrichment.routeType) {
@@ -540,6 +647,28 @@ function patchForEnrichment(trail: TrailProjection, enrichment: WTAEnrichment) {
     })
   }
 
+  if (enrichment.latestConditions) {
+    const currentConditions = (trail as any).conditions
+    const nextSnow = enrichment.latestConditions.snow ?? currentConditions?.snow ?? 'none'
+    const nextMud = enrichment.latestConditions.mud ?? currentConditions?.mud ?? 'dry'
+    ops.push({
+      op: 'set',
+      path: '/conditions',
+      value: {
+        ...currentConditions,
+        overall: nextSnow === 'significant' || nextSnow === 'patchy' || nextMud === 'heavy'
+          ? 'caution'
+          : currentConditions?.overall ?? 'go',
+        snow: nextSnow,
+        mud: nextMud,
+        bugs: currentConditions?.bugs ?? 'none',
+        notes: enrichment.latestConditions.notes,
+        lastUpdatedISO: enrichment.latestConditions.reportedISO ?? new Date().toISOString(),
+        source: 'wta_trip_report',
+      },
+    })
+  }
+
   return ops
 }
 
@@ -552,6 +681,7 @@ function patchForWtaMiss() {
         syncedAt: new Date().toISOString(),
         statsSyncedAt: new Date().toISOString(),
         status: 'not_found',
+        statsAvailable: false,
         parkingChecked: true,
         accessChecked: true,
         statsChecked: true,
@@ -577,12 +707,16 @@ function landOwnerFromParking(parkingType?: ParkingPassType): LandOwner {
 
 function trailDocFromWtaEnrichment(enrichment: WTAEnrichment) {
   if (typeof enrichment.lat !== 'number' || typeof enrichment.lng !== 'number') return null
+  if (!hasUsableStats(enrichment)) return null
 
   const region = regionFromLatLng(enrichment.lat, enrichment.lng)
   const now = new Date().toISOString()
   const parkingType = enrichment.parkingType ?? 'unknown'
   const accessLevel = enrichment.accessLevel ?? 'unknown'
   const alerts = enrichment.alert ? [enrichment.alert] : []
+  const difficulty = enrichment.difficulty ?? difficultyFromStats(enrichment.miles, enrichment.elevationGainFt) ?? 'Moderate'
+  const conditionSnow = enrichment.latestConditions?.snow ?? 'none'
+  const conditionMud = enrichment.latestConditions?.mud ?? 'dry'
 
   return {
     id: `wta-${slugFromUrl(enrichment.url)}`,
@@ -591,10 +725,10 @@ function trailDocFromWtaEnrichment(enrichment: WTAEnrichment) {
     region,
     lat: enrichment.lat,
     lng: enrichment.lng,
-    miles: enrichment.miles ?? 3,
+    miles: enrichment.miles,
     elevationGainFt: enrichment.elevationGainFt ?? 0,
     trailheadElevationFt: enrichment.trailheadElevationFt,
-    difficulty: enrichment.difficulty ?? 'Moderate',
+    difficulty,
     routeType: enrichment.routeType ?? 'OutAndBack',
     landOwner: landOwnerFromParking(parkingType),
     parking: {
@@ -615,12 +749,13 @@ function trailDocFromWtaEnrichment(enrichment: WTAEnrichment) {
       lastUpdatedISO: now,
     } : undefined,
     conditions: {
-      overall: 'unknown',
-      snow: 'none',
-      mud: 'dry',
+      overall: conditionSnow === 'significant' || conditionSnow === 'patchy' || conditionMud === 'heavy' ? 'caution' : 'go',
+      snow: conditionSnow,
+      mud: conditionMud,
       bugs: 'none',
-      notes: [],
-      lastUpdatedISO: now,
+      notes: enrichment.latestConditions?.notes ?? [],
+      lastUpdatedISO: enrichment.latestConditions?.reportedISO ?? now,
+      source: enrichment.latestConditions ? 'wta_trip_report' : 'wta',
     },
     alerts,
     description: enrichment.description,
@@ -631,6 +766,7 @@ function trailDocFromWtaEnrichment(enrichment: WTAEnrichment) {
       syncedAt: now,
       statsSyncedAt: now,
       status: 'matched',
+      statsAvailable: true,
       parkingChecked: true,
       accessChecked: true,
       statsChecked: true,
@@ -778,7 +914,7 @@ async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Pro
             "OR ((NOT IS_DEFINED(t.wta.parkingChecked) OR t.wta.parkingChecked = false) AND (NOT IS_DEFINED(t.parking.type) OR t.parking.type = 'unknown'))",
             'OR NOT IS_DEFINED(t.miles)',
             'OR NOT IS_DEFINED(t.difficulty)',
-            "OR (t.source = 'osm' AND (t.miles = 3 OR t.difficulty = 'Easy') AND (NOT IS_DEFINED(t.wta.status) OR t.wta.status != 'not_found'))",
+            "OR ((t.source = 'osm' OR t.source = 'wta') AND (t.miles = 3 OR t.elevationGainFt = 0 OR t.difficulty = 'Easy') AND (NOT IS_DEFINED(t.wta.statsAvailable) OR t.wta.statsAvailable != true) AND (NOT IS_DEFINED(t.wta.status) OR t.wta.status != 'not_found'))",
             ')',
           ].join(' ')
     const querySpec = {

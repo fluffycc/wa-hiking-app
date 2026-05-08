@@ -8,6 +8,8 @@ import { DEFAULT_FILTERS } from '../domain/filters'
 import { fetchTrails } from '../services/trailsApi'
 import type { Trail } from '../domain/types'
 
+const suggestionCache = new Map<string, Trail[]>()
+
 function normalizeSearch(value: string) {
   return value
     .toLowerCase()
@@ -93,6 +95,8 @@ export function MapPage() {
   const [mapSearch, setMapSearch] = useState('')
   const [suggestions, setSuggestions] = useState<Trail[]>([])
   const [searchLoading, setSearchLoading] = useState(false)
+  const [searchComplete, setSearchComplete] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   const searchSeqRef = useRef(0)
 
   useEffect(() => {
@@ -102,20 +106,41 @@ export function MapPage() {
     if (query.length < 2) {
       setSuggestions([])
       setSearchLoading(false)
+      setSearchComplete(false)
+      return
+    }
+
+    setSearchOpen(true)
+    setSearchComplete(false)
+    const cacheKey = normalizeSearch(query)
+    const localSuggestions = rankSuggestions(query, trails)
+    setSuggestions(localSuggestions)
+
+    const cachedSuggestions = suggestionCache.get(cacheKey)
+    if (cachedSuggestions) {
+      setSuggestions(rankSuggestions(query, [...localSuggestions, ...cachedSuggestions]))
+      setSearchComplete(true)
+      setSearchLoading(false)
       return
     }
 
     const controller = new AbortController()
     const timeout = window.setTimeout(() => {
       setSearchLoading(true)
-      fetchTrails(DEFAULT_FILTERS, query, 'relevance', 1, 50, undefined, controller.signal)
+      fetchTrails(DEFAULT_FILTERS, query, 'relevance', 1, 25, undefined, controller.signal)
         .then(data => {
-          if (requestSeq === searchSeqRef.current) setSuggestions(rankSuggestions(query, data.trails))
+          if (requestSeq !== searchSeqRef.current) return
+          suggestionCache.set(cacheKey, data.trails)
+          setSuggestions(rankSuggestions(query, [...localSuggestions, ...data.trails]))
+          setSearchComplete(true)
         })
         .catch((err: unknown) => {
           if (controller.signal.aborted) return
           if (err instanceof DOMException && err.name === 'AbortError') return
-          if (requestSeq === searchSeqRef.current) setSuggestions([])
+          if (requestSeq === searchSeqRef.current) {
+            setSuggestions(localSuggestions)
+            setSearchComplete(true)
+          }
         })
         .finally(() => {
           if (requestSeq === searchSeqRef.current) setSearchLoading(false)
@@ -126,7 +151,7 @@ export function MapPage() {
       window.clearTimeout(timeout)
       controller.abort()
     }
-  }, [mapSearch])
+  }, [mapSearch, trails])
 
   if (error && !trails.length)   return <ErrorState message={error} onRetry={() => void loadTrails()} />
 
@@ -137,13 +162,14 @@ export function MapPage() {
       ? `Showing ${filteredTrails.length} trails in this area`
       : `${filteredTrails.length} trails in view`
     : `${filteredTrails.length} sample trails`
-  const showSearchDropdown = suggestions.length > 0 || searchLoading
+  const showSearchDropdown = searchOpen && mapSearch.trim().length >= 2 && (suggestions.length > 0 || searchLoading || searchComplete)
 
   const selectSuggestion = (trail: Trail) => {
     focusTrail(trail)
     setSelectedTrailId(trail.id)
     setMapSearch(trail.name)
     setSuggestions([])
+    setSearchOpen(false)
   }
 
   return (
@@ -152,13 +178,14 @@ export function MapPage() {
         <div className="relative z-50 pointer-events-auto">
           <input
             value={mapSearch}
-            onChange={e => setMapSearch(e.target.value)}
+            onChange={e => { setSearchOpen(true); setMapSearch(e.target.value) }}
+            onFocus={() => { if (mapSearch.trim().length >= 2) setSearchOpen(true) }}
             placeholder="Search trail by name..."
             className="w-full bg-white/95 backdrop-blur-sm border border-gray-200 rounded-2xl pl-4 pr-9 py-2.5 text-sm font-body shadow-card focus:outline-none focus:ring-2 focus:ring-trail-green/30"
           />
           {mapSearch && (
             <button
-              onClick={() => { setMapSearch(''); setSuggestions([]) }}
+              onClick={() => { setMapSearch(''); setSuggestions([]); setSearchComplete(false); setSearchOpen(false) }}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
             >
               x
@@ -183,6 +210,11 @@ export function MapPage() {
                   <span className="block text-xs text-trail-stone">{trail.region} / {trail.miles} mi</span>
                 </button>
               ))}
+              {!searchLoading && searchComplete && suggestions.length === 0 && (
+                <div className="px-3 py-3 text-sm text-trail-stone">
+                  No matching trails yet
+                </div>
+              )}
             </div>
           )}
         </div>

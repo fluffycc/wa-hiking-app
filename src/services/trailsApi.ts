@@ -16,12 +16,12 @@ export interface TrailBounds {
   west:  number
 }
 
-const RESPONSE_CACHE_TTL_MS = 10 * 60 * 1000
-const PERSISTED_RESPONSE_CACHE_TTL_MS = 30 * 60 * 1000
+const RESPONSE_CACHE_TTL_MS = 20 * 60 * 1000
+const PERSISTED_RESPONSE_CACHE_TTL_MS = 60 * 60 * 1000
 const RESPONSE_CACHE_MAX_ENTRIES = 150
 const PERSISTED_RESPONSE_CACHE_MAX_ENTRIES = 60
-const API_DATA_VERSION = '2026-05-08-wta-index'
-const STORAGE_PREFIX = 'wa-hiking:trails:v4:'
+const API_DATA_VERSION = '2026-05-08-quality-conditions'
+const STORAGE_PREFIX = 'wa-hiking:trails:v5:'
 const STORAGE_INDEX_KEY = `${STORAGE_PREFIX}index`
 const responseCache = new Map<string, { cachedAt: number; data: TrailsApiResponse }>()
 
