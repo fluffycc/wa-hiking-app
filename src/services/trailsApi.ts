@@ -20,7 +20,8 @@ const RESPONSE_CACHE_TTL_MS = 10 * 60 * 1000
 const PERSISTED_RESPONSE_CACHE_TTL_MS = 30 * 60 * 1000
 const RESPONSE_CACHE_MAX_ENTRIES = 150
 const PERSISTED_RESPONSE_CACHE_MAX_ENTRIES = 60
-const STORAGE_PREFIX = 'wa-hiking:trails:v2:'
+const API_DATA_VERSION = '2026-05-08-wta-corrections'
+const STORAGE_PREFIX = 'wa-hiking:trails:v3:'
 const STORAGE_INDEX_KEY = `${STORAGE_PREFIX}index`
 const responseCache = new Map<string, { cachedAt: number; data: TrailsApiResponse }>()
 
@@ -130,6 +131,7 @@ export async function fetchTrails(
   signal?: AbortSignal,
 ): Promise<TrailsApiResponse> {
   const params = new URLSearchParams()
+  params.set('v', API_DATA_VERSION)
   params.set('page',  String(page))
   params.set('limit', String(limit))
   params.set('sort',  sort)
@@ -161,7 +163,7 @@ export async function fetchTrails(
 }
 
 export async function fetchTrailById(id: string): Promise<Trail> {
-  const res = await fetch(`/api/trail?id=${encodeURIComponent(id)}`)
+  const res = await fetch(`/api/trail?id=${encodeURIComponent(id)}&v=${encodeURIComponent(API_DATA_VERSION)}`)
   if (!res.ok) throw new Error(`Trail not found: ${id}`)
   return res.json() as Promise<Trail>
 }

@@ -99,35 +99,17 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
 
 export function FeedbackButton() {
   const [open, setOpen] = useState(false)
-  const [collapsed, setCollapsed] = useState(false)
 
   const button = (
     <>
-      {collapsed ? (
-        <button
-          onClick={() => setCollapsed(false)}
-          aria-label="Show feedback"
-          className="feedback-float fixed right-3 z-[9998] w-10 h-10 bg-white text-trail-dark border border-gray-200 font-body font-semibold text-sm rounded-full shadow-lg hover:bg-gray-50 transition-colors"
-        >
-          ?
-        </button>
-      ) : (
-        <div className="feedback-float fixed right-3 z-[9998] flex items-center gap-1.5">
-          <button
-            onClick={() => setOpen(true)}
-            className="bg-trail-dark text-white font-body font-medium text-sm rounded-full px-4 py-2.5 shadow-lg hover:bg-trail-green transition-colors"
-          >
-            Feedback
-          </button>
-          <button
-            onClick={() => setCollapsed(true)}
-            aria-label="Hide feedback"
-            className="w-9 h-9 rounded-full bg-white text-trail-stone border border-gray-200 shadow-lg hover:bg-gray-50 transition-colors"
-          >
-            x
-          </button>
-        </div>
-      )}
+      <button
+        onClick={() => setOpen(true)}
+        aria-label="Send feedback"
+        title="Send feedback"
+        className="feedback-float fixed right-2 z-[9998] w-7 h-7 bg-white/90 text-trail-dark border border-gray-200 font-body font-bold text-xs rounded-full shadow-md hover:bg-white hover:scale-105 transition-all"
+      >
+        !
+      </button>
       {open && <FeedbackModal onClose={() => setOpen(false)} />}
     </>
   )

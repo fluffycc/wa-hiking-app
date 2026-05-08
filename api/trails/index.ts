@@ -1,9 +1,10 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { getTrailsContainer } from '../shared/cosmosClient'
 import { overlayRegionConditions } from '../shared/regionConditions'
+import { applyTrailCorrections, normalizeCorrectionName } from '../shared/trailCorrections'
 
-const CACHE_CONTROL = 'public, max-age=900, s-maxage=1800, stale-while-revalidate=1800'
-const RESPONSE_CACHE_TTL_MS = 15 * 60 * 1000
+const CACHE_CONTROL = 'public, max-age=60, s-maxage=300, stale-while-revalidate=600'
+const RESPONSE_CACHE_TTL_MS = 5 * 60 * 1000
 const RESPONSE_CACHE_MAX_ENTRIES = 200
 
 interface CachedTrailsResponse {
@@ -32,15 +33,7 @@ function rememberResponse(key: string, body: unknown): void {
 }
 
 function normalizeTrailName(value: unknown): string {
-  return String(value ?? '')
-    .toLowerCase()
-    .replace(/&/g, 'and')
-    .replace(/\([^)]*\)/g, '')
-    .replace(/\btwenty two\b/g, '22')
-    .replace(/\btwenty[-\s]?two\b/g, '22')
-    .replace(/\btrail\b/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
+  return normalizeCorrectionName(value)
 }
 
 function trailKey(trail: TrailDoc): string {
@@ -72,6 +65,23 @@ function searchScore(query: string | undefined, trail: TrailDoc): number {
   if (name.includes(` ${q} `) || name.endsWith(` ${q}`)) return 3
   if (name.includes(q)) return 4
   return 99
+}
+
+function searchVariants(query: string): string[] {
+  const lower = query.toLowerCase().trim()
+  const normalized = normalizeTrailName(query)
+  const variants = new Set<string>([lower, normalized])
+
+  if (/\b22\b/.test(normalized)) {
+    variants.add(normalized.replace(/\b22\b/g, 'twenty two'))
+    variants.add(normalized.replace(/\b22\b/g, 'twenty-two'))
+  }
+
+  if (/\btwenty[-\s]?two\b/i.test(lower)) {
+    variants.add(lower.replace(/\btwenty[-\s]?two\b/gi, '22'))
+  }
+
+  return [...variants].map(value => value.trim()).filter(Boolean)
 }
 
 function uniqueTrails(resources: TrailDoc[], query: string | undefined, limit: number): TrailDoc[] {
@@ -159,8 +169,13 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
     conditions.push(`t.difficulty IN (${diffs.join(', ')})`)
   }
   if (p['q']) {
-    conditions.push('(CONTAINS(LOWER(t.name), @q) OR CONTAINS(LOWER(t.region), @q))')
-    params.push({ name: '@q', value: p['q'].toLowerCase() })
+    const variants = searchVariants(p['q'])
+    const queryConditions = variants.map((variant, i) => {
+      params.push({ name: `@q${i}`, value: variant })
+      return `CONTAINS(LOWER(t.name), @q${i})`
+    })
+    params.push({ name: '@qRegion', value: p['q'].toLowerCase() })
+    conditions.push(`(${[...queryConditions, 'CONTAINS(LOWER(t.region), @qRegion)'].join(' OR ')})`)
   }
 
   const where = `WHERE ${conditions.join(' AND ')}`
@@ -180,7 +195,8 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
       { query, parameters: params },
       { enableCrossPartitionQuery: true }
     ).fetchAll()
-    const trails = uniqueTrails(dataRes.resources, p['q'], limit)
+    const correctedResources = applyTrailCorrections(dataRes.resources)
+    const trails = uniqueTrails(correctedResources, p['q'], limit)
     const trailsWithConditions = await overlayRegionConditions(container, trails)
     const hasMore = dataRes.resources.length > trails.length
     const body = { trails: trailsWithConditions, total: offset + trails.length, page, limit, hasMore }

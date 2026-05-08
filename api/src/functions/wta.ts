@@ -660,6 +660,7 @@ async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Pro
             "OR ((NOT IS_DEFINED(t.wta.parkingChecked) OR t.wta.parkingChecked = false) AND (NOT IS_DEFINED(t.parking.type) OR t.parking.type = 'unknown'))",
             'OR NOT IS_DEFINED(t.miles)',
             'OR NOT IS_DEFINED(t.difficulty)',
+            "OR (t.source = 'osm' AND (t.miles = 3 OR t.difficulty = 'Easy') AND (NOT IS_DEFINED(t.wta.status) OR t.wta.status != 'not_found'))",
             ')',
           ].join(' ')
     const querySpec = {

@@ -1,6 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { getTrailsContainer } from '../shared/cosmosClient'
 import { overlayRegionConditions } from '../shared/regionConditions'
+import { applyTrailCorrection } from '../shared/trailCorrections'
 
 async function trailHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const id = new URL(req.url).searchParams.get('id')
@@ -16,7 +17,7 @@ async function trailHandler(req: HttpRequest, context: InvocationContext): Promi
       .fetchAll()
 
     if (!resources.length) return { status: 404, jsonBody: { error: 'Trail not found' } }
-    const [trail] = await overlayRegionConditions(container, [resources[0]])
+    const [trail] = await overlayRegionConditions(container, [applyTrailCorrection(resources[0])])
     return { status: 200, jsonBody: trail }
   } catch (err) {
     context.error('GET /api/trail error', err)

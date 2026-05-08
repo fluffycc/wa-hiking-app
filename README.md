@@ -112,6 +112,8 @@ WTA sync is intentionally incremental (`limit=20` in the workflow) because it re
 
 WTA sync also seeds a small set of high-confidence WTA-native trail records for important hikes that broad OSM sync can miss or mis-measure, including Lake 22 and Heather Lake on the Mountain Loop Highway. Additional one-off WTA seeds can be requested with `sync-wta?seed=Trail%20Name`.
 
+The trail read APIs also apply a small authoritative correction table for known WTA-backed records so stale OSM defaults like `3 miles / Easy` do not leak through while Cosmos is catching up.
+
 ## Build And Test
 
 Frontend:
