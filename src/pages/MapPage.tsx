@@ -102,21 +102,27 @@ export function MapPage() {
       return
     }
 
-    setSearchLoading(true)
+    const controller = new AbortController()
     const timeout = window.setTimeout(() => {
-      fetchTrails(DEFAULT_FILTERS, query, 'relevance', 1, 50)
+      setSearchLoading(true)
+      fetchTrails(DEFAULT_FILTERS, query, 'relevance', 1, 50, undefined, controller.signal)
         .then(data => {
           if (requestSeq === searchSeqRef.current) setSuggestions(rankSuggestions(query, data.trails))
         })
-        .catch(() => {
+        .catch((err: unknown) => {
+          if (controller.signal.aborted) return
+          if (err instanceof DOMException && err.name === 'AbortError') return
           if (requestSeq === searchSeqRef.current) setSuggestions([])
         })
         .finally(() => {
           if (requestSeq === searchSeqRef.current) setSearchLoading(false)
         })
-    }, 120)
+    }, 90)
 
-    return () => window.clearTimeout(timeout)
+    return () => {
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
   }, [mapSearch])
 
   if (error && !trails.length)   return <ErrorState message={error} onRetry={() => void loadTrails()} />

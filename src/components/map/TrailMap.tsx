@@ -1,6 +1,5 @@
-import L from 'leaflet'
 import { useCallback, useEffect, useRef } from 'react'
-import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, CircleMarker, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import type { Trail } from '../../domain/types'
 import { useUiStore } from '../../state/useUiStore'
@@ -9,24 +8,6 @@ import { useTrailStore } from '../../state/useTrailStore'
 const PIN_COLORS = {
   go: '#22c55e',
   closed: '#ef4444',
-}
-
-function createPinIcon(color: string, selected: boolean) {
-  const size = selected ? 22 : 15
-  return L.divIcon({
-    className: '',
-    html: `<div style="
-      width:${size}px;
-      height:${size}px;
-      border-radius:50%;
-      background:${color};
-      border:${selected ? '3px solid #1a2e1e' : '2px solid #fff'};
-      box-shadow:0 2px 8px rgba(0,0,0,0.4);
-      cursor:pointer;
-    "></div>`,
-    iconSize:   [size, size],
-    iconAnchor: [size / 2, size / 2],
-  })
 }
 
 function alertIsActive(alert: NonNullable<Trail['alerts']>[number]): boolean {
@@ -130,21 +111,31 @@ export function TrailMap() {
       zoom={7}
       zoomControl={false}
       preferCanvas
+      fadeAnimation={false}
+      markerZoomAnimation={false}
       style={{ width: '100%', height: '100%' }}
     >
       <TileLayer
-        attribution='Tiles &copy; Esri, HERE, Garmin, FAO, NOAA, USGS, &copy; OpenStreetMap contributors'
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
         keepBuffer={2}
         updateWhenIdle
-        url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+        updateInterval={200}
+        url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
       />
       <ViewportTrailLoader />
       <RecenterMap trail={selected} />
       {filteredTrails.map(trail => (
-        <Marker
+        <CircleMarker
           key={trail.id}
-          position={[trail.lat, trail.lng]}
-          icon={createPinIcon(getPinColor(trail), selectedTrailId === trail.id)}
+          center={[trail.lat, trail.lng]}
+          radius={selectedTrailId === trail.id ? 9 : 6}
+          pathOptions={{
+            color: selectedTrailId === trail.id ? '#1a2e1e' : '#ffffff',
+            fillColor: getPinColor(trail),
+            fillOpacity: 1,
+            opacity: 1,
+            weight: selectedTrailId === trail.id ? 3 : 2,
+          }}
           eventHandlers={{ click: () => setSelectedTrailId(trail.id) }}
         />
       ))}

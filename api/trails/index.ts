@@ -1,8 +1,8 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { getTrailsContainer } from '../shared/cosmosClient'
 
-const CACHE_CONTROL = 'public, max-age=120, s-maxage=300, stale-while-revalidate=600'
-const RESPONSE_CACHE_TTL_MS = 2 * 60 * 1000
+const CACHE_CONTROL = 'public, max-age=300, s-maxage=600, stale-while-revalidate=900'
+const RESPONSE_CACHE_TTL_MS = 5 * 60 * 1000
 const RESPONSE_CACHE_MAX_ENTRIES = 200
 
 interface CachedTrailsResponse {

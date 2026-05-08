@@ -16,7 +16,7 @@ export interface TrailBounds {
   west:  number
 }
 
-const RESPONSE_CACHE_TTL_MS = 2 * 60 * 1000
+const RESPONSE_CACHE_TTL_MS = 5 * 60 * 1000
 const RESPONSE_CACHE_MAX_ENTRIES = 150
 const responseCache = new Map<string, { cachedAt: number; data: TrailsApiResponse }>()
 
@@ -35,6 +35,7 @@ export async function fetchTrails(
   page   = 1,
   limit  = 50,
   bounds?: TrailBounds,
+  signal?: AbortSignal,
 ): Promise<TrailsApiResponse> {
   const params = new URLSearchParams()
   params.set('page',  String(page))
@@ -59,7 +60,7 @@ export async function fetchTrails(
   const cached = responseCache.get(url)
   if (cached && Date.now() - cached.cachedAt < RESPONSE_CACHE_TTL_MS) return cached.data
 
-  const res = await fetch(url)
+  const res = await fetch(url, { signal })
   if (!res.ok) throw new Error(`API error ${res.status}`)
   const data = await res.json() as TrailsApiResponse
   rememberResponse(url, data)

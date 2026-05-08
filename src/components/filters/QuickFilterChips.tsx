@@ -2,6 +2,7 @@ import { useTrailStore } from '../../state/useTrailStore'
 
 interface Chip {
   id: string
+  icon: string
   label: string
   filterKey: string
   filterValue: string
@@ -9,10 +10,10 @@ interface Chip {
 }
 
 const CHIPS: Chip[] = [
-  { id: 'go', label: 'Good today', filterKey: 'conditionOverall', filterValue: 'go', activeValue: 'go' },
-  { id: 'discover', label: 'Discover Pass', filterKey: 'parkingType', filterValue: 'discover_pass', activeValue: 'discover_pass' },
-  { id: 'nw-forest', label: 'NW Forest Pass', filterKey: 'parkingType', filterValue: 'nw_forest_pass', activeValue: 'nw_forest_pass' },
-  { id: 'free', label: 'Free parking', filterKey: 'parkingType', filterValue: 'free', activeValue: 'free' },
+  { id: 'go', icon: '🌤️', label: 'Good today', filterKey: 'conditionOverall', filterValue: 'go', activeValue: 'go' },
+  { id: 'discover', icon: '🎟️', label: 'Discover Pass', filterKey: 'parkingType', filterValue: 'discover_pass', activeValue: 'discover_pass' },
+  { id: 'nw-forest', icon: '🌲', label: 'NW Forest Pass', filterKey: 'parkingType', filterValue: 'nw_forest_pass', activeValue: 'nw_forest_pass' },
+  { id: 'free', icon: '🅿️', label: 'Free parking', filterKey: 'parkingType', filterValue: 'free', activeValue: 'free' },
 ]
 
 export function QuickFilterChips() {
@@ -34,12 +35,13 @@ export function QuickFilterChips() {
           <button
             key={chip.id}
             onClick={() => toggle(chip)}
-            className={`flex-shrink-0 text-xs font-body font-medium rounded-full px-3 py-1.5 border transition-all duration-150
+            className={`flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-body font-medium rounded-full px-3 py-1.5 border transition-all duration-150
               ${active
                 ? 'bg-trail-green text-white border-trail-green shadow-sm'
                 : 'bg-white text-trail-dark border-gray-200 hover:border-trail-green/40'}`}
           >
-            {chip.label}
+            <span aria-hidden="true">{chip.icon}</span>
+            <span>{chip.label}</span>
           </button>
         )
       })}
