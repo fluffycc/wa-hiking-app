@@ -29,11 +29,12 @@ The app answers four practical questions:
 | OpenStreetMap Overpass | Base trail records | None |
 | WA DNR GIS | WA DNR trails and forest road maintenance | None |
 | WA State Parks / wa.gov | State park trails and Discover Pass defaults | None |
-| NOAA Weather | Snow, rain, temperature by WA region | None |
+| NOAA Weather | Regional forecast snapshots overlaid on trails at read time | None |
 | WSDOT Pass Conditions | Mountain pass access warnings only | Free key |
 | Washington Trails Association | Authoritative trail stats, parking pass, WTA link, road/access notes | Public pages |
 
 WSDOT is intentionally not treated as proof of trail closure because pass closures are too broad for individual trails.
+Legacy WSDOT pass alerts are filtered out of trail API responses so they do not color or clutter individual trail details.
 
 ## Map Dot Rules
 
@@ -140,5 +141,6 @@ The map uses three layers of caching:
 - API `Cache-Control` headers for `/api/trails`.
 - Viewport results capped at 50 trails to keep the map light on mobile.
 - Map panning is constrained to Washington to avoid unnecessary out-of-state work.
+- Conditions sync writes 8 regional weather snapshots instead of patching every trail, so weather refreshes stay under the Static Web Apps backend timeout.
 
 Cosmos DB is still the main latency source for brand-new map areas. A future map-tile or geohash endpoint would be the next major speed upgrade.

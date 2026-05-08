@@ -1,5 +1,6 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { getTrailsContainer } from '../shared/cosmosClient'
+import { overlayRegionConditions } from '../shared/regionConditions'
 
 const CACHE_CONTROL = 'public, max-age=900, s-maxage=1800, stale-while-revalidate=1800'
 const RESPONSE_CACHE_TTL_MS = 15 * 60 * 1000
@@ -124,7 +125,7 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
     }
   }
 
-  const conditions: string[] = []
+  const conditions: string[] = ["(NOT IS_DEFINED(t.docType) OR t.docType = 'trail')"]
   const params: { name: string; value: unknown }[] = []
 
   if (p['region']) {
@@ -159,7 +160,7 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
     params.push({ name: '@q', value: p['q'].toLowerCase() })
   }
 
-  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const where = `WHERE ${conditions.join(' AND ')}`
   const sortMap: Record<string, string> = {
     miles_asc: 't.miles ASC', elevation_asc: 't.elevationGainFt ASC',
     name_asc: 't.name ASC', relevance: 't._ts DESC',
@@ -177,8 +178,9 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
       { enableCrossPartitionQuery: true }
     ).fetchAll()
     const trails = uniqueTrails(dataRes.resources, p['q'], limit)
+    const trailsWithConditions = await overlayRegionConditions(container, trails)
     const hasMore = dataRes.resources.length > trails.length
-    const body = { trails, total: offset + trails.length, page, limit, hasMore }
+    const body = { trails: trailsWithConditions, total: offset + trails.length, page, limit, hasMore }
     rememberResponse(requestCacheKey, body)
 
     return {

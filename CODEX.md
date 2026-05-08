@@ -60,6 +60,7 @@ The current performance strategy is:
 - Send cache headers from `/api/trails`.
 - Keep viewport result size capped at 50.
 - Keep map movement constrained to Washington.
+- Conditions sync should store regional NOAA snapshots and let `/api/trails` and `/api/trail` overlay conditions at read time. Do not patch every trail during conditions sync; it can exceed the Static Web Apps backend timeout.
 
 The next meaningful upgrade is a geohash or map-tile style trail endpoint backed by precomputed cells in Cosmos.
 
