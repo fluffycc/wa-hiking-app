@@ -8,6 +8,39 @@ import { DEFAULT_FILTERS } from '../domain/filters'
 import { fetchTrails } from '../services/trailsApi'
 import type { Trail } from '../domain/types'
 
+function normalizeSearch(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function scoreSuggestion(query: string, trail: Trail) {
+  const q = normalizeSearch(query)
+  const name = normalizeSearch(trail.name)
+  const words = name.split(' ')
+
+  if (name === q) return 0
+  if (name.startsWith(q)) return 1
+  if (words.some(word => word.startsWith(q))) return 2
+  if (name.includes(` ${q} `) || name.endsWith(` ${q}`)) return 3
+  if (name.includes(q)) return 4
+  return 99
+}
+
+function rankSuggestions(query: string, results: Trail[]) {
+  return [...results]
+    .filter(trail => scoreSuggestion(query, trail) < 99)
+    .sort((a, b) => {
+      const scoreDiff = scoreSuggestion(query, a) - scoreSuggestion(query, b)
+      if (scoreDiff !== 0) return scoreDiff
+      const lengthDiff = a.name.length - b.name.length
+      if (lengthDiff !== 0) return lengthDiff
+      return a.name.localeCompare(b.name)
+    })
+    .slice(0, 8)
+}
+
 export function MapPage() {
   const {
     filteredTrails,
@@ -41,9 +74,9 @@ export function MapPage() {
 
     setSearchLoading(true)
     const timeout = window.setTimeout(() => {
-      fetchTrails(DEFAULT_FILTERS, query, 'name_asc', 1, 8)
+      fetchTrails(DEFAULT_FILTERS, query, 'relevance', 1, 100)
         .then(data => {
-          if (requestSeq === searchSeqRef.current) setSuggestions(data.trails)
+          if (requestSeq === searchSeqRef.current) setSuggestions(rankSuggestions(query, data.trails))
         })
         .catch(() => {
           if (requestSeq === searchSeqRef.current) setSuggestions([])

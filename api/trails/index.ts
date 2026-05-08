@@ -65,7 +65,7 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
     const hasMore = dataRes.resources.length > limit
     return {
       status: 200,
-      headers: { 'Cache-Control': 'public, max-age=30' },
+      headers: { 'Cache-Control': 'public, max-age=120, s-maxage=300, stale-while-revalidate=600' },
       jsonBody: { trails, total: offset + trails.length, page, limit, hasMore },
     }
   } catch (err) {

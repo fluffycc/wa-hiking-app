@@ -43,6 +43,10 @@ function alertIsTrailClosure(alert: NonNullable<Trail['alerts']>[number]): boole
   return alert.type === 'closure' || textSuggestsClosure(alert.message)
 }
 
+function textSuggestsDifficultAccess(value?: string): boolean {
+  return !!value && /\b(rough|potholes?|rutted|washout|washed out|high clearance|4x4|4wd|impassable|road closed|no access|not accessible)\b/i.test(value)
+}
+
 function trailHasClosure(trail: Trail): boolean {
   const activeAlerts = trail.alerts?.filter(alertIsActive) ?? []
 
@@ -52,18 +56,20 @@ function trailHasClosure(trail: Trail): boolean {
   )
 }
 
-function trailHasConditionCaution(trail: Trail): boolean {
+function trailHasSnowOrDifficultAccess(trail: Trail): boolean {
   return (
-    trail.conditions.overall === 'caution' ||
-    trail.conditions.overall === 'avoid' ||
-    trail.conditions.snow !== 'none' ||
-    trail.conditions.mud === 'heavy'
+    trail.conditions.snow === 'significant' ||
+    ['rough', 'high_clearance', '4x4_only'].includes(trail.access.level) ||
+    trail.roadCondition?.condition === 'rough' ||
+    trail.roadCondition?.condition === 'very_rough' ||
+    textSuggestsDifficultAccess(trail.access.notes) ||
+    textSuggestsDifficultAccess(trail.roadCondition?.notes)
   )
 }
 
 function getPinColor(trail: Trail): string {
   if (trailHasClosure(trail)) return PIN_COLORS.closed
-  if (trailHasConditionCaution(trail)) return PIN_COLORS.caution
+  if (trailHasSnowOrDifficultAccess(trail)) return PIN_COLORS.caution
   return PIN_COLORS.go
 }
 
@@ -97,10 +103,10 @@ function ViewportTrailLoader() {
     timerRef.current = window.setTimeout(() => {
       const bounds = map.getBounds()
       const nextBounds = {
-        north: Number(bounds.getNorth().toFixed(3)),
-        south: Number(bounds.getSouth().toFixed(3)),
-        east:  Number(bounds.getEast().toFixed(3)),
-        west:  Number(bounds.getWest().toFixed(3)),
+        north: Number(bounds.getNorth().toFixed(2)),
+        south: Number(bounds.getSouth().toFixed(2)),
+        east:  Number(bounds.getEast().toFixed(2)),
+        west:  Number(bounds.getWest().toFixed(2)),
       }
       const viewportKey = [
         map.getZoom(),

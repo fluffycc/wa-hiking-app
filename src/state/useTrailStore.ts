@@ -9,6 +9,19 @@ import { useUiStore } from './useUiStore'
 let _sampleData: Trail[] | null = null
 let _loadSeq = 0
 const VIEWPORT_TRAIL_LIMIT = 100
+const VIEWPORT_CACHE_TTL_MS = 5 * 60 * 1000
+
+interface TrailCacheEntry {
+  data: {
+    trails: Trail[]
+    total: number
+    hasMore: boolean
+  }
+  cachedAt: number
+}
+
+const _trailCache = new Map<string, TrailCacheEntry>()
+
 async function loadSampleData(): Promise<Trail[]> {
   if (_sampleData) return _sampleData
   const m = await import('../data/trails.sample.json')
@@ -49,6 +62,44 @@ function trailIsWithinBounds(trail: Trail, bounds: TrailBounds): boolean {
   )
 }
 
+function cacheKey(filters: FilterState, query: string, sort: SortKey, bounds?: TrailBounds): string {
+  return JSON.stringify({
+    filters,
+    query: query.trim().toLowerCase(),
+    sort,
+    bounds: bounds
+      ? {
+          north: bounds.north,
+          south: bounds.south,
+          east: bounds.east,
+          west: bounds.west,
+        }
+      : null,
+  })
+}
+
+function mergeSelectedTrail(
+  trails: Trail[],
+  previousTrails: Trail[],
+  selectedTrailId: string | null,
+  bounds?: TrailBounds
+): Trail[] {
+  const selectedTrail = selectedTrailId
+    ? previousTrails.find(t => t.id === selectedTrailId)
+    : undefined
+  const selectedTrailInBounds = !!selectedTrail && (!bounds || trailIsWithinBounds(selectedTrail, bounds))
+
+  if (selectedTrail && bounds && !selectedTrailInBounds) {
+    useUiStore.getState().setSelectedTrailId(null)
+  }
+
+  if (selectedTrailInBounds && !trails.some(t => t.id === selectedTrail.id)) {
+    return [selectedTrail, ...trails].slice(0, VIEWPORT_TRAIL_LIMIT)
+  }
+
+  return trails
+}
+
 export const useTrailStore = create<TrailStore>((set, get) => ({
   trails: [], loading: false, error: null,
   searchQuery: '', sortKey: 'relevance',
@@ -69,6 +120,23 @@ export const useTrailStore = create<TrailStore>((set, get) => ({
 
     try {
       const latest = get()
+      const key = cacheKey(latest.activeFilters, latest.searchQuery, latest.sortKey, nextBounds)
+      const cached = _trailCache.get(key)
+
+      if (cached && Date.now() - cached.cachedAt < VIEWPORT_CACHE_TTL_MS) {
+        const selectedTrailId = useUiStore.getState().selectedTrailId
+        const trails = mergeSelectedTrail(cached.data.trails, state.trails, selectedTrailId, nextBounds)
+        set({
+          trails,
+          filteredTrails: deriveFiltered(trails, latest.searchQuery, latest.activeFilters, latest.sortKey),
+          loading: false,
+          usingApi: true,
+          totalTrails: cached.data.total,
+          hasMore: cached.data.hasMore,
+        })
+        return
+      }
+
       const data = await fetchTrails(
         latest.activeFilters,
         latest.searchQuery,
@@ -79,19 +147,15 @@ export const useTrailStore = create<TrailStore>((set, get) => ({
       )
       if (requestSeq !== _loadSeq) return
       const selectedTrailId = useUiStore.getState().selectedTrailId
-      const selectedTrail = selectedTrailId
-        ? get().trails.find(t => t.id === selectedTrailId) ?? state.trails.find(t => t.id === selectedTrailId)
-        : undefined
-      const selectedTrailInBounds = !!selectedTrail && (!nextBounds || trailIsWithinBounds(selectedTrail, nextBounds))
-      const trailToKeep = selectedTrailInBounds ? selectedTrail : undefined
-
-      if (selectedTrail && nextBounds && !selectedTrailInBounds) {
-        useUiStore.getState().setSelectedTrailId(null)
-      }
-
-      const trails = trailToKeep && !data.trails.some(t => t.id === trailToKeep.id)
-        ? [trailToKeep, ...data.trails].slice(0, VIEWPORT_TRAIL_LIMIT)
-        : data.trails
+      _trailCache.set(key, {
+        data: {
+          trails: data.trails,
+          total: data.total,
+          hasMore: data.hasMore,
+        },
+        cachedAt: Date.now(),
+      })
+      const trails = mergeSelectedTrail(data.trails, get().trails.length ? get().trails : state.trails, selectedTrailId, nextBounds)
       set({
         trails,
         filteredTrails: deriveFiltered(trails, latest.searchQuery, latest.activeFilters, latest.sortKey),
