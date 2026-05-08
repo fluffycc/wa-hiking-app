@@ -127,8 +127,22 @@ async function conditionsSyncHandler(
   const logger = getLogger(context)
 
   try {
-    const token = getSyncTokenFromRequest(req)
-    if (token !== process.env['SYNC_SECRET_TOKEN']) {
+    // --- Debug: log presence and masked match info (do not print secret value) ---
+    const tokenRaw = getSyncTokenFromRequest(req)
+    const token = tokenRaw ? tokenRaw.trim() : null
+    const secret = process.env['SYNC_SECRET_TOKEN']
+    const secretPresent = !!secret
+    const tokenPresent = !!token
+    const secretLen = secret ? String(secret).length : 0
+    const tokenLen = token ? String(token).length : 0
+    const isMatch = tokenPresent && secretPresent && token === secret
+
+    logger.info(`SYNC secret present in env: ${secretPresent}; env token length: ${secretLen}`)
+    logger.info(`Token present in request: ${tokenPresent}; token length: ${tokenLen}`)
+    logger.info(`Token match: ${isMatch}`)
+    // -------------------------------------------------------------------------
+
+    if (!isMatch) {
       logger.warn('Unauthorized sync attempt: missing or invalid token')
       return {
         status: 401,
