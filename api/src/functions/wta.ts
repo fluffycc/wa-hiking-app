@@ -3,11 +3,11 @@ import { getTrailsContainer } from '../../shared/cosmosClient'
 
 const WTA_SEARCH_URL = 'https://www.wta.org/go-outside/hikes/hike_search'
 const WTA_HIKE_URL = 'https://www.wta.org/go-hiking/hikes'
-const FETCH_TIMEOUT_MS = 20_000
-const DEFAULT_LIMIT = 50
-const MAX_LIMIT = 75
-const DETAIL_BATCH_SIZE = 2
-const MAX_RUN_MS = 110_000
+const FETCH_TIMEOUT_MS = 5_000
+const DEFAULT_LIMIT = 10
+const MAX_LIMIT = 20
+const DETAIL_BATCH_SIZE = 1
+const MAX_RUN_MS = 25_000
 const USER_AGENT = 'WAHikingApp/1.0 (contact: you@example.com)'
 const textCache = new Map<string, string>()
 
@@ -200,7 +200,7 @@ function extractSearchLinks(html: string): Array<{ url: string; name: string }> 
 }
 
 async function findWtaTrail(trailName: string): Promise<{ url: string; name: string } | null> {
-  const targets = wtaNameVariants(trailName)
+  const targets = wtaNameVariants(trailName).slice(0, 3)
 
   for (const target of targets) {
     const directUrl = `${WTA_HIKE_URL}/${slugFromName(target)}`
@@ -211,7 +211,7 @@ async function findWtaTrail(trailName: string): Promise<{ url: string; name: str
     }
   }
 
-  for (const target of targets) {
+  for (const target of targets.slice(0, 2)) {
     const url = new URL(WTA_SEARCH_URL)
     url.searchParams.set('searchabletext', target)
 
@@ -431,7 +431,7 @@ async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Pro
     let stoppedEarly = false
 
     await mapInBatches(trails, DETAIL_BATCH_SIZE, async (trail) => {
-      if (Date.now() - startedAt > MAX_RUN_MS) {
+      if (Date.now() - startedAt > MAX_RUN_MS - FETCH_TIMEOUT_MS * 2) {
         stoppedEarly = true
         return
       }

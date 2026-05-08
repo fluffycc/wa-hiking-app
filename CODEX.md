@@ -36,7 +36,7 @@ Current sync functions:
 - `sync-wta`
 - `sync-conditions`
 
-WTA enrichment is incremental by design. It prioritizes trails with unknown parking and marks checked trails so repeated workflow runs make progress without crawling WTA too aggressively.
+The scheduled GitHub workflow runs the full sync chain twice per day. WTA enrichment is incremental by design and must stay under the Static Web Apps backend timeout, so keep its scheduled limit small. It prioritizes trails with unknown parking and marks checked trails so repeated workflow runs make progress without crawling WTA too aggressively.
 
 ## Search
 

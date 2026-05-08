@@ -105,7 +105,9 @@ Available manual modes:
 - `conditions`: NOAA and WSDOT warning refresh.
 - `all`: full pipeline.
 
-WTA sync is intentionally incremental (`limit=50` in the workflow) because it reads public WTA pages and should not run as a heavy crawler. It prioritizes trails that still have unknown parking.
+The scheduled workflow runs the full pipeline twice per day at `03:00` and `15:00` UTC, which is roughly evening and morning Pacific time depending on daylight saving time.
+
+WTA sync is intentionally incremental (`limit=10` in the workflow) because it reads public WTA pages through Azure Static Web Apps, which can fail long requests near the 45-second mark. It prioritizes trails that still have unknown parking.
 
 ## Build And Test
 
