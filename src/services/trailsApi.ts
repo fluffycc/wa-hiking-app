@@ -33,7 +33,7 @@ export async function fetchTrails(
   query:   string,
   sort:    SortKey,
   page   = 1,
-  limit  = 100,
+  limit  = 50,
   bounds?: TrailBounds,
 ): Promise<TrailsApiResponse> {
   const params = new URLSearchParams()

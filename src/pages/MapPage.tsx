@@ -3,7 +3,7 @@ import { TrailMap } from '../components/map/TrailMap'
 import { QuickFilterChips } from '../components/filters/QuickFilterChips'
 import { useTrailStore } from '../state/useTrailStore'
 import { useUiStore } from '../state/useUiStore'
-import { LoadingSpinner, ErrorState } from '../components/ui/LoadingSpinner'
+import { ErrorState } from '../components/ui/LoadingSpinner'
 import { DEFAULT_FILTERS } from '../domain/filters'
 import { fetchTrails } from '../services/trailsApi'
 import type { Trail } from '../domain/types'
@@ -93,10 +93,6 @@ export function MapPage() {
   const searchSeqRef = useRef(0)
 
   useEffect(() => {
-    if (!trails.length) loadTrails()
-  }, [loadTrails, trails.length])
-
-  useEffect(() => {
     const query = mapSearch.trim()
     const requestSeq = ++searchSeqRef.current
 
@@ -108,7 +104,7 @@ export function MapPage() {
 
     setSearchLoading(true)
     const timeout = window.setTimeout(() => {
-      fetchTrails(DEFAULT_FILTERS, query, 'relevance', 1, 60)
+      fetchTrails(DEFAULT_FILTERS, query, 'relevance', 1, 50)
         .then(data => {
           if (requestSeq === searchSeqRef.current) setSuggestions(rankSuggestions(query, data.trails))
         })
@@ -123,10 +119,11 @@ export function MapPage() {
     return () => window.clearTimeout(timeout)
   }, [mapSearch])
 
-  if (loading && !trails.length) return <LoadingSpinner message="Loading WA trails..." />
   if (error && !trails.length)   return <ErrorState message={error} onRetry={() => void loadTrails()} />
 
-  const trailCountLabel = usingApi
+  const trailCountLabel = loading && !trails.length
+    ? 'Finding nearby trails'
+    : usingApi
     ? hasMore
       ? `Showing ${filteredTrails.length} trails in this area`
       : `${filteredTrails.length} trails in view`
@@ -192,13 +189,13 @@ export function MapPage() {
             <div className="text-xs text-trail-stone font-body bg-white/80 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">
               {trailCountLabel}
             </div>
-            {loading && trails.length > 0 && (
+            {loading && (
               <div className="flex items-center gap-1.5 text-xs text-trail-green font-body bg-white/90 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">
                 <span className="w-3 h-3 rounded-full border-2 border-trail-green/20 border-t-trail-green animate-spin" />
-                Updating area
+                {trails.length ? 'Updating area' : 'Loading trails'}
               </div>
             )}
-            {!usingApi && (
+            {!usingApi && !loading && (
               <div className="text-xs text-amber-700 font-body bg-amber-50/90 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">
                 Sample data - set up Cosmos DB for live trails
               </div>

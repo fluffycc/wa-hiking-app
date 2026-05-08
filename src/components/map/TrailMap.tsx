@@ -103,7 +103,7 @@ function ViewportTrailLoader() {
       lastViewportKeyRef.current = viewportKey
 
       void loadTrails(nextBounds)
-    }, 250)
+    }, 150)
   }, [loadTrails, map])
 
   useEffect(() => {
@@ -129,11 +129,14 @@ export function TrailMap() {
       center={[47.5, -120.5]}
       zoom={7}
       zoomControl={false}
+      preferCanvas
       style={{ width: '100%', height: '100%' }}
     >
       <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        attribution='Tiles &copy; Esri, HERE, Garmin, FAO, NOAA, USGS, &copy; OpenStreetMap contributors'
+        keepBuffer={2}
+        updateWhenIdle
+        url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
       />
       <ViewportTrailLoader />
       <RecenterMap trail={selected} />

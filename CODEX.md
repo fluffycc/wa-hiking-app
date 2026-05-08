@@ -9,7 +9,7 @@ WA Hiking App is a mobile-first Washington trail map. It should feel practical, 
 ## User Experience Rules
 
 - Default tab is Map.
-- Badge order is Conditions, Access, Parking.
+- Detail summary badges should show Access and Parking only.
 - Search on the map should behave like a natural suggestion box, not only filter the current viewport.
 - The details panel should prioritize current condition, access, parking, and basics.
 - Do not show placeholder trip-report sections unless real trip-report data is available.
@@ -40,7 +40,7 @@ WTA enrichment is incremental by design. It prioritizes trails with unknown park
 
 ## Search
 
-Map search fetches up to 100 API matches, then ranks them client-side:
+Map search fetches up to 50 API matches, then ranks them client-side:
 
 1. Exact name match.
 2. Name starts with query.
@@ -57,7 +57,7 @@ The current performance strategy is:
 - Round viewport bounds before requests.
 - Cache viewport responses in Zustand for a few minutes.
 - Send cache headers from `/api/trails`.
-- Keep viewport result size capped at 100.
+- Keep viewport result size capped at 50.
 
 The next meaningful upgrade is a geohash or map-tile style trail endpoint backed by precomputed cells in Cosmos.
 

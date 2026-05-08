@@ -105,7 +105,7 @@ Available manual modes:
 - `conditions`: NOAA and WSDOT warning refresh.
 - `all`: full pipeline.
 
-WTA sync is intentionally incremental (`limit=25` in the workflow) because it reads public WTA pages and should not run as a heavy crawler. It prioritizes trails that still have unknown parking.
+WTA sync is intentionally incremental (`limit=50` in the workflow) because it reads public WTA pages and should not run as a heavy crawler. It prioritizes trails that still have unknown parking.
 
 ## Build And Test
 
@@ -135,5 +135,6 @@ The map uses three layers of caching:
 - Short client-side viewport cache in Zustand.
 - Short warm-instance response cache in the Azure Function.
 - API `Cache-Control` headers for `/api/trails`.
+- Viewport results capped at 50 trails to keep the map light on mobile.
 
 Cosmos DB is still the main latency source for brand-new map areas. A future map-tile or geohash endpoint would be the next major speed upgrade.

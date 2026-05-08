@@ -73,13 +73,6 @@ function hasRoadCaution(trail: Trail): boolean {
   )
 }
 
-function getConditionBadge(trail: Trail): { label: string; className: string } {
-  if (hasClosure(trail)) return { label: 'Closed', className: BADGE_CLASS.red }
-  if (trail.conditions.overall === 'go') return { label: 'Good', className: BADGE_CLASS.green }
-  if (trail.conditions.overall === 'unknown') return { label: 'Conditions unknown', className: BADGE_CLASS.gray }
-  return { label: 'Caution', className: BADGE_CLASS.amber }
-}
-
 function getAccessBadge(trail: Trail): { label: string; className: string } {
   if (hasClosure(trail)) return { label: 'Not accessible', className: BADGE_CLASS.red }
   if (hasRoadCaution(trail)) {
@@ -88,13 +81,12 @@ function getAccessBadge(trail: Trail): { label: string; className: string } {
     return { label: 'Road caution', className: BADGE_CLASS.amber }
   }
   if (trail.access.level === 'sedan_ok') return { label: 'Sedan OK', className: BADGE_CLASS.blue }
-  if (trail.access.level === 'unknown') return { label: 'Check access', className: BADGE_CLASS.amber }
+  if (trail.access.level === 'unknown') return { label: 'Access unknown', className: BADGE_CLASS.gray }
   return { label: trail.access.level.replace(/_/g, ' '), className: BADGE_CLASS.amber }
 }
 
 export function BadgeRow({ trail, size = 'md' }: Props) {
   const px = size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-xs'
-  const condition = getConditionBadge(trail)
   const access = getAccessBadge(trail)
   const parkingClass = PARKING_CLASS[trail.parking.type] ?? BADGE_CLASS.gray
   const parkingLabel = PARKING_LABEL[trail.parking.type] ?? 'Parking unknown'
@@ -107,7 +99,6 @@ export function BadgeRow({ trail, size = 'md' }: Props) {
 
   return (
     <div className="flex flex-wrap gap-1.5">
-      {badge(condition.label, condition.className)}
       {badge(access.label, access.className)}
       {badge(parkingLabel, parkingClass)}
     </div>

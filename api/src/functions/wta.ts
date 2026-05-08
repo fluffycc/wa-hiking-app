@@ -4,7 +4,7 @@ import { getTrailsContainer } from '../../shared/cosmosClient'
 const WTA_SEARCH_URL = 'https://www.wta.org/go-outside/hikes/hike_search'
 const WTA_HIKE_URL = 'https://www.wta.org/go-hiking/hikes'
 const FETCH_TIMEOUT_MS = 20_000
-const DEFAULT_LIMIT = 25
+const DEFAULT_LIMIT = 50
 const MAX_LIMIT = 75
 const DETAIL_BATCH_SIZE = 2
 const MAX_RUN_MS = 110_000
@@ -152,6 +152,33 @@ function slugFromName(value: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
+function wtaNameVariants(value: string): string[] {
+  const normalized = normalizeName(value)
+  const variants = new Set<string>([normalized])
+
+  for (const pattern of [
+    /\s+river\s+loop$/i,
+    /\s+creek\s+loop$/i,
+    /\s+lake\s+loop$/i,
+    /\s+loop$/i,
+    /\s+route$/i,
+  ]) {
+    const trimmed = normalized.replace(pattern, '').trim()
+    if (trimmed.length >= 4) variants.add(trimmed)
+  }
+
+  const words = normalized.split(/\s+/)
+  if (words.length > 2) variants.add(words.slice(0, 2).join(' '))
+  if (words.length > 3) variants.add(words.slice(0, 3).join(' '))
+
+  return [...variants].filter(Boolean)
+}
+
+function titleLooksLikeMatch(title: string, targets: string[]): boolean {
+  const candidate = normalizeName(title)
+  return targets.some(target => candidate === target || candidate.includes(target) || target.includes(candidate))
+}
+
 function extractPageTitle(html: string): string | undefined {
   const h1 = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]
   if (h1) return stripTags(h1)
@@ -173,29 +200,29 @@ function extractSearchLinks(html: string): Array<{ url: string; name: string }> 
 }
 
 async function findWtaTrail(trailName: string): Promise<{ url: string; name: string } | null> {
-  const target = normalizeName(trailName)
-  const directUrl = `${WTA_HIKE_URL}/${slugFromName(trailName)}`
-  const directHtml = await tryFetchText(directUrl)
-  if (directHtml) {
-    const directName = extractPageTitle(directHtml) ?? trailName
-    if (normalizeName(directName) === target) return { url: directUrl, name: directName }
+  const targets = wtaNameVariants(trailName)
+
+  for (const target of targets) {
+    const directUrl = `${WTA_HIKE_URL}/${slugFromName(target)}`
+    const directHtml = await tryFetchText(directUrl)
+    if (directHtml) {
+      const directName = extractPageTitle(directHtml) ?? trailName
+      if (titleLooksLikeMatch(directName, targets)) return { url: directUrl, name: directName }
+    }
   }
 
-  const url = new URL(WTA_SEARCH_URL)
-  url.searchParams.set('searchabletext', trailName)
+  for (const target of targets) {
+    const url = new URL(WTA_SEARCH_URL)
+    url.searchParams.set('searchabletext', target)
 
-  const html = await fetchTextWithTimeout(url.toString())
-  const links = extractSearchLinks(html)
-  if (!links.length) return null
+    const html = await fetchTextWithTimeout(url.toString())
+    const links = extractSearchLinks(html)
+    const match = links.find(link => titleLooksLikeMatch(link.name, targets))
+    if (match) return match
+    if (links[0]) return links[0]
+  }
 
-  return (
-    links.find(link => normalizeName(link.name) === target) ??
-    links.find(link => {
-      const candidate = normalizeName(link.name)
-      return candidate.includes(target) || target.includes(candidate)
-    }) ??
-    links[0]
-  )
+  return null
 }
 
 function extractSection(html: string, title: string): string | undefined {

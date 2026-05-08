@@ -8,7 +8,7 @@ import { useUiStore } from './useUiStore'
 
 let _sampleData: Trail[] | null = null
 let _loadSeq = 0
-const VIEWPORT_TRAIL_LIMIT = 100
+const VIEWPORT_TRAIL_LIMIT = 50
 const VIEWPORT_CACHE_TTL_MS = 5 * 60 * 1000
 
 interface TrailCacheEntry {
