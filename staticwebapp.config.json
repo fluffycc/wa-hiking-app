@@ -15,6 +15,6 @@
     "exclude": ["/api/*", "*.{css,scss,js,ts,jsx,tsx,png,gif,ico,txt,json,svg,woff,woff2}"]
   },
   "platform": {
-    "apiRuntime": "node:18"
+    "apiRuntime": "node:20"
   }
 }
