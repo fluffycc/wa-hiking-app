@@ -4,13 +4,28 @@ import { getTrailsContainer } from '../shared/cosmosClient'
 async function trailsHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const p = Object.fromEntries(new URL(req.url).searchParams)
   const page   = Math.max(1, parseInt(p['page']  ?? '1'))
-  const limit  = Math.min(100, Math.max(1, parseInt(p['limit'] ?? '50')))
+  const limit  = Math.min(1000, Math.max(1, parseInt(p['limit'] ?? '50')))
   const offset = (page - 1) * limit
 
   const conditions: string[] = []
   const params: { name: string; value: unknown }[] = []
 
-  if (p['region'])     { conditions.push('t.region = @region');              params.push({ name: '@region',    value: p['region'] }) }
+  if (p['region']) {
+    const regions = p['region'].split(',').map((r: string, i: number) => {
+      params.push({ name: `@region${i}`, value: r.trim() })
+      return `@region${i}`
+    })
+    conditions.push(`t.region IN (${regions.join(', ')})`)
+  }
+  if (p['north'] && p['south'] && p['east'] && p['west']) {
+    conditions.push('t.lat >= @south AND t.lat <= @north AND t.lng >= @west AND t.lng <= @east')
+    params.push(
+      { name: '@north', value: parseFloat(p['north']) },
+      { name: '@south', value: parseFloat(p['south']) },
+      { name: '@east',  value: parseFloat(p['east']) },
+      { name: '@west',  value: parseFloat(p['west']) },
+    )
+  }
   if (p['condition'] && p['condition'] !== 'any') { conditions.push('t.conditions.overall = @condition'); params.push({ name: '@condition', value: p['condition'] }) }
   if (p['access']    && p['access']    !== 'any') { conditions.push('t.access.level = @access');          params.push({ name: '@access',    value: p['access'] }) }
   if (p['parking']   && p['parking']   !== 'any') { conditions.push('t.parking.type = @parking');         params.push({ name: '@parking',   value: p['parking'] }) }
