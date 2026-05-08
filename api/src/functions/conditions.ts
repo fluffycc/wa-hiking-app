@@ -49,19 +49,30 @@ function getFetch(): typeof fetch {
 
 /**
  * Safely extract the sync token from the request.
- * Azure Functions HttpRequest.headers is a plain object with lowercased keys.
+ * Supports:
+ *  - x-sync-token header (preferred)
+ *  - Authorization: Bearer <token>
+ *  - ?token= query param
  */
 function getSyncTokenFromRequest(req: HttpRequest): string | null {
   try {
     if (req && req.headers) {
+      // headers keys are typically lowercased in Azure Functions
       const headerToken = (req.headers['x-sync-token'] || req.headers['X-Sync-Token']) as string | undefined
       if (headerToken) return headerToken
+
+      const auth = (req.headers['authorization'] || req.headers['Authorization']) as string | undefined
+      if (auth && typeof auth === 'string') {
+        const m = auth.match(/Bearer\s+(.+)/i)
+        if (m) return m[1]
+      }
     }
 
     if (req && req.url) {
       try {
         const url = new URL(req.url)
-        return url.searchParams.get('token')
+        const q = url.searchParams.get('token')
+        if (q) return q
       } catch {
         // ignore malformed URL
       }
@@ -127,15 +138,21 @@ async function conditionsSyncHandler(
   const logger = getLogger(context)
 
   try {
-    // --- Debug: log presence and masked match info (do not print secret value) ---
+    // --- Debug: check env secret under multiple common names and log masked presence/length ---
+    // Accept either SYNC_SECRET_TOKEN (preferred) or SYNC_TOKEN (common workflow name)
+    const envSecret =
+      process.env['SYNC_SECRET_TOKEN'] ??
+      process.env['SYNC_TOKEN'] ??
+      process.env['SYNC_SECRET'] ?? // extra fallback if used
+      null
+
     const tokenRaw = getSyncTokenFromRequest(req)
     const token = tokenRaw ? tokenRaw.trim() : null
-    const secret = process.env['SYNC_SECRET_TOKEN']
-    const secretPresent = !!secret
+    const secretPresent = !!envSecret
     const tokenPresent = !!token
-    const secretLen = secret ? String(secret).length : 0
+    const secretLen = envSecret ? String(envSecret).length : 0
     const tokenLen = token ? String(token).length : 0
-    const isMatch = tokenPresent && secretPresent && token === secret
+    const isMatch = tokenPresent && secretPresent && token === envSecret
 
     logger.info(`SYNC secret present in env: ${secretPresent}; env token length: ${secretLen}`)
     logger.info(`Token present in request: ${tokenPresent}; token length: ${tokenLen}`)
@@ -154,6 +171,7 @@ async function conditionsSyncHandler(
 
     // Validate required env vars early
     const requiredEnv = [
+      // keep the canonical name in the list for configuration checks
       'SYNC_SECRET_TOKEN',
       'COSMOS_ENDPOINT',
       'COSMOS_KEY',
