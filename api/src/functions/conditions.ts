@@ -21,6 +21,29 @@ const REGION_SAMPLES: Record<string, { lat: number; lng: number; elevFt: number 
   'Southwest Washington':  { lat: 46.10,  lng: -122.15, elevFt: 1500 },
 }
 
+const UPDATE_BATCH_SIZE = 20
+
+interface TrailConditionProjection {
+  id: string
+  pk?: string
+  name?: string
+  region?: string
+  trailheadElevationFt?: number
+  elevationGainFt?: number
+  conditions?: Record<string, unknown>
+  alerts?: Array<unknown>
+}
+
+async function runInBatches<T>(
+  items: T[],
+  batchSize: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  for (let i = 0; i < items.length; i += batchSize) {
+    await Promise.all(items.slice(i, i + batchSize).map(worker))
+  }
+}
+
 /**
  * Normalized logger that maps to context.log.* when available,
  * and falls back to console.*. Ensures info/warn/error are always functions.
@@ -240,10 +263,14 @@ async function conditionsSyncHandler(
       }
 
       // Query trails for region
-      let trails: any[] = []
+      let trails: TrailConditionProjection[] = []
       try {
         const querySpec = {
-          query: 'SELECT * FROM t WHERE t.region = @r',
+          query: [
+            'SELECT t.id, t.pk, t.name, t.region,',
+            't.trailheadElevationFt, t.elevationGainFt, t.conditions, t.alerts',
+            'FROM t WHERE t.region = @r',
+          ].join(' '),
           parameters: [{ name: '@r', value: region }],
         }
         const { resources } = await container.items.query(querySpec, { enableCrossPartitionQuery: true }).fetchAll()
@@ -253,7 +280,7 @@ async function conditionsSyncHandler(
         continue
       }
 
-      for (const trail of trails) {
+      await runInBatches(trails, UPDATE_BATCH_SIZE, async (trail) => {
         try {
           const trailheadElev = trail.trailheadElevationFt ?? sample.elevFt
           const summitElev = trailheadElev + (trail.elevationGainFt ?? 0)
@@ -281,10 +308,11 @@ async function conditionsSyncHandler(
             }
           }
 
-          // Upsert updated conditions
-          await container.items.upsert({
-            ...trail,
-            conditions: {
+          await container.item(trail.id, trail.pk ?? trail.region ?? region).patch([
+            {
+              op: 'set',
+              path: '/conditions',
+              value: {
               ...trail.conditions,
               overall: derived.overall,
               snow: derived.snow,
@@ -293,15 +321,20 @@ async function conditionsSyncHandler(
               weatherHint: derived.weatherHint,
               notes: derived.notes,
               lastUpdatedISO: derived.lastUpdatedISO,
+              },
             },
-            alerts: trailAlerts.length ? trailAlerts : trail.alerts ?? [],
-          })
+            {
+              op: 'set',
+              path: '/alerts',
+              value: trailAlerts.length ? trailAlerts : trail.alerts ?? [],
+            },
+          ])
 
           updated++
         } catch (err) {
           logger.error(`Failed to update trail ${trail?.id ?? trail?.name ?? '<unknown>'}: ${String(err)}`)
         }
-      }
+      })
     }
 
     logger.info(`Conditions sync complete: ${updated} trails updated`)
