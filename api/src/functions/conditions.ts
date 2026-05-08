@@ -22,15 +22,28 @@ const REGION_SAMPLES: Record<string, { lat: number; lng: number; elevFt: number 
 }
 
 /**
+ * Normalized logger that maps to context.log.* when available,
+ * and falls back to console.*. Ensures info/warn/error are always functions.
+ */
+function getLogger(context?: InvocationContext) {
+  const base = context?.log ?? console
+  return {
+    info: typeof base.info === 'function' ? base.info.bind(base) : console.log.bind(console),
+    warn: typeof base.warn === 'function' ? base.warn.bind(base) : console.warn.bind(console),
+    error: typeof base.error === 'function' ? base.error.bind(base) : console.error.bind(console),
+    debug: typeof base.debug === 'function' ? base.debug.bind(base) : console.debug?.bind(console) ?? console.log.bind(console),
+  }
+}
+
+/**
  * Helper to obtain a fetch implementation.
  * Most modern Node runtimes (18+) provide global fetch.
  * If your runtime does not, install node-fetch and this will require it at runtime.
  */
 function getFetch(): typeof fetch {
-  // prefer global fetch if available
   if ((globalThis as any).fetch) return (globalThis as any).fetch
   // eslint-disable-next-line @typescript-eslint/no-var-requires, @typescript-eslint/no-unsafe-member-access
-  const nf = require('node-fetch') // fallback for older runtimes; ensure node-fetch is installed if used
+  const nf = require('node-fetch')
   return nf
 }
 
@@ -41,12 +54,10 @@ function getFetch(): typeof fetch {
 function getSyncTokenFromRequest(req: HttpRequest): string | null {
   try {
     if (req && req.headers) {
-      // headers keys are typically lowercased in Azure Functions
       const headerToken = (req.headers['x-sync-token'] || req.headers['X-Sync-Token']) as string | undefined
       if (headerToken) return headerToken
     }
 
-    // fallback to query param token if present
     if (req && req.url) {
       try {
         const url = new URL(req.url)
@@ -78,8 +89,7 @@ async function getNOAAForecast(lat: number, lng: number): Promise<NOAAForecastPe
     if (!fcRes.ok) return null
     const fcData = await fcRes.json() as { properties?: { periods?: NOAAForecastPeriod[] } }
     return fcData.properties?.periods ?? null
-  } catch (err) {
-    // swallow and return null (best-effort), but caller will log outcome
+  } catch {
     return null
   }
 }
@@ -114,21 +124,19 @@ async function conditionsSyncHandler(
   req: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
-  // defensive: ensure we have a log object
-  const log = context.log ?? console
+  const logger = getLogger(context)
 
   try {
-    // token validation inside try so any unexpected runtime errors are caught and logged
     const token = getSyncTokenFromRequest(req)
     if (token !== process.env['SYNC_SECRET_TOKEN']) {
-      log.warn('Unauthorized sync attempt: missing or invalid token')
+      logger.warn('Unauthorized sync attempt: missing or invalid token')
       return {
         status: 401,
         jsonBody: { error: 'Unauthorized' },
       }
     }
 
-    log.info('Starting conditions sync (NOAA + WSDOT)...')
+    logger.info('Starting conditions sync (NOAA + WSDOT)...')
 
     // Validate required env vars early
     const requiredEnv = [
@@ -142,7 +150,7 @@ async function conditionsSyncHandler(
     const missing = requiredEnv.filter(k => !process.env[k])
 
     if (missing.length > 0) {
-      log.error(`Missing env vars: ${missing.join(', ')}`)
+      logger.error(`Missing env vars: ${missing.join(', ')}`)
 
       return {
         status: 500,
@@ -162,21 +170,21 @@ async function conditionsSyncHandler(
         try {
           const periods = await getNOAAForecast(sample.lat, sample.lng)
           if (periods) forecasts.set(region, periods)
-          log.info(`NOAA ${region}: ${periods ? 'ok' : 'failed'}`)
+          logger.info(`NOAA ${region}: ${periods ? 'ok' : 'failed'}`)
         } catch (err) {
-          log.error(`NOAA ${region} fetch error:`, err)
+          logger.error(`NOAA ${region} fetch error: ${String(err)}`)
         }
       })
     )
 
     // 2. WSDOT alerts
     const passAlerts = await getWSDOTPasses()
-    log.info(`WSDOT: ${passAlerts.size} active alerts`)
+    logger.info(`WSDOT: ${passAlerts.size} active alerts`)
 
     // 3. Cosmos init
     const container = getTrailsContainer()
     if (!container) {
-      log.error('Cosmos container initialization failed')
+      logger.error('Cosmos container initialization failed')
       return {
         status: 500,
         jsonBody: { ok: false, error: 'Cosmos initialization failed' },
@@ -188,7 +196,7 @@ async function conditionsSyncHandler(
     for (const [region, sample] of Object.entries(REGION_SAMPLES)) {
       const periods = forecasts.get(region)
       if (!periods) {
-        log.info(`Skipping region ${region} — no forecast data`)
+        logger.info(`Skipping region ${region} — no forecast data`)
         continue
       }
 
@@ -202,8 +210,7 @@ async function conditionsSyncHandler(
         const { resources } = await container.items.query(querySpec, { enableCrossPartitionQuery: true }).fetchAll()
         trails = resources ?? []
       } catch (err) {
-        log.error(`Cosmos query failed for region ${region}:`, err)
-        // continue to next region rather than aborting entire sync
+        logger.error(`Cosmos query failed for region ${region}: ${String(err)}`)
         continue
       }
 
@@ -253,13 +260,12 @@ async function conditionsSyncHandler(
 
           updated++
         } catch (err) {
-          log.error(`Failed to update trail ${trail?.id ?? trail?.name ?? '<unknown>'}:`, err)
-          // continue with other trails
+          logger.error(`Failed to update trail ${trail?.id ?? trail?.name ?? '<unknown>'}: ${String(err)}`)
         }
       }
     }
 
-    log.info(`Conditions sync complete: ${updated} trails updated`)
+    logger.info(`Conditions sync complete: ${updated} trails updated`)
 
     return {
       status: 200,
@@ -271,8 +277,7 @@ async function conditionsSyncHandler(
       },
     }
   } catch (err) {
-    // use context.log.error so it exists in the runtime
-    ;(context.log?.error ?? console.error)('Conditions sync failed:', err)
+    logger.error('Conditions sync failed:', err)
     return {
       status: 500,
       jsonBody: {
