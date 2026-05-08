@@ -1,4 +1,5 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
+import { randomUUID } from 'crypto'
 import { getTrailsContainer } from '../../shared/cosmosClient'
 import {
   regionFromLatLng,
@@ -16,6 +17,8 @@ const OVERPASS_INSTANCES = [
 ]
 
 const USER_AGENT = 'WAHikingApp/1.0 (contact: you@example.com)'
+const FETCH_TIMEOUT_MS = 180_000
+const UPSERT_BATCH_SIZE = 25
 
 const OSM_WAYS_QUERY = `
 [out:json][timeout:120];
@@ -31,12 +34,23 @@ interface OsmElement {
   tags?: Record<string, string>
 }
 
-function validateSyncToken(req: HttpRequest): boolean {
+function getSyncTokenFromRequest(req: HttpRequest): string | null {
   const token =
     req.headers.get('x-sync-token') ??
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ??
     new URL(req.url).searchParams.get('token')
 
-  return token === process.env['SYNC_SECRET_TOKEN']
+  return token?.trim() || null
+}
+
+function validateSyncToken(req: HttpRequest): boolean {
+  const token = getSyncTokenFromRequest(req)
+  const secret =
+    process.env['SYNC_SECRET_TOKEN'] ??
+    process.env['SYNC_TOKEN'] ??
+    process.env['SYNC_SECRET']
+
+  return !!token && !!secret && token === secret
 }
 
 function safeGetContainer(context: InvocationContext) {
@@ -52,6 +66,8 @@ function safeGetContainer(context: InvocationContext) {
 
 async function safeFetch(url: string, body: string, context: InvocationContext) {
   const start = Date.now()
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
 
   try {
     context.log(`[OSM] Fetching ${url}`)
@@ -63,6 +79,7 @@ async function safeFetch(url: string, body: string, context: InvocationContext) 
         'User-Agent': USER_AGENT,
       },
       body,
+      signal: controller.signal,
     })
 
     const text = await res.text()
@@ -88,6 +105,18 @@ async function safeFetch(url: string, body: string, context: InvocationContext) 
     const ms = Date.now() - start
     context.warn(`[OSM] ${url} failed after ${ms}ms`, e)
     throw e
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function runInBatches<T>(
+  items: T[],
+  batchSize: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  for (let i = 0; i < items.length; i += batchSize) {
+    await Promise.all(items.slice(i, i + batchSize).map(worker))
   }
 }
 
@@ -115,19 +144,19 @@ async function osmSyncHandler(
   context: InvocationContext
 ): Promise<HttpResponseInit> {
 
-  const requestId = crypto.randomUUID()
+  const requestId = randomUUID()
   const startTime = Date.now()
 
-  context.log(`[OSM][${requestId}] START`)
-
-  if (!validateSyncToken(req)) {
-    return {
-      status: 401,
-      jsonBody: { ok: false, error: 'Unauthorized', requestId },
-    }
-  }
-
   try {
+    context.log(`[OSM][${requestId}] START`)
+
+    if (!validateSyncToken(req)) {
+      return {
+        status: 401,
+        jsonBody: { ok: false, error: 'Unauthorized', requestId },
+      }
+    }
+
     const container = safeGetContainer(context)
 
     // optional Cosmos sanity check (non-fatal)
@@ -149,17 +178,12 @@ async function osmSyncHandler(
     let upserted = 0
     let errors = 0
 
-    const BATCH_SIZE = 10
-
-    for (let i = 0; i < ways.length; i += BATCH_SIZE) {
-      const batch = ways.slice(i, i + BATCH_SIZE)
-
-      for (const way of batch) {
+    await runInBatches(ways, UPSERT_BATCH_SIZE, async (way) => {
         try {
           const tags = way.tags
           const center = way.center
 
-          if (!tags?.name || !center) continue
+          if (!tags?.name || !center) return
 
           const lat = center.lat
           const lng = center.lon
@@ -217,10 +241,7 @@ async function osmSyncHandler(
           errors++
           context.warn(`[OSM][${requestId}] upsert failed`, e)
         }
-      }
-
-      await new Promise(r => setTimeout(r, 1500))
-    }
+    })
 
     const duration = Date.now() - startTime
     context.log(`[OSM][${requestId}] DONE in ${duration}ms`)

@@ -6,6 +6,8 @@ import { regionFromLatLng, cleanName } from '../../shared/trailMapper'
 // Dataset: WA State Parks locations with amenities
 const PARKS_URL = 'https://data.wa.gov/resource/qeqb-pjy8.json'
 const PAGE_SIZE = 1000
+const FETCH_TIMEOUT_MS = 60_000
+const UPSERT_BATCH_SIZE = 25
 
 interface WAParkRecord {
   site_name?: string
@@ -20,20 +22,57 @@ interface WAParkRecord {
   [key: string]: unknown
 }
 
+function getSyncTokenFromRequest(req: HttpRequest): string | null {
+  const token =
+    req.headers.get('x-sync-token') ??
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ??
+    new URL(req.url).searchParams.get('token')
+
+  return token?.trim() || null
+}
+
 function validateSyncToken(req: HttpRequest): boolean {
-  const token = req.headers.get('x-sync-token') ?? new URL(req.url).searchParams.get('token')
-  return token === process.env['SYNC_SECRET_TOKEN']
+  const token = getSyncTokenFromRequest(req)
+  const secret =
+    process.env['SYNC_SECRET_TOKEN'] ??
+    process.env['SYNC_TOKEN'] ??
+    process.env['SYNC_SECRET']
+
+  return !!token && !!secret && token === secret
+}
+
+async function fetchJsonWithTimeout<T>(url: string): Promise<T> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
+  try {
+    const res = await fetch(url, { signal: controller.signal })
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`)
+    return await res.json() as T
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function runInBatches<T>(
+  items: T[],
+  batchSize: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  for (let i = 0; i < items.length; i += batchSize) {
+    await Promise.all(items.slice(i, i + batchSize).map(worker))
+  }
 }
 
 async function waparksSyncHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-  if (!validateSyncToken(req)) return { status: 401, jsonBody: { error: 'Unauthorized' } }
-
-  context.log('Starting WA State Parks sync...')
-  let upserted = 0
-  let offset = 0
-  const container = getTrailsContainer()
-
   try {
+    if (!validateSyncToken(req)) return { status: 401, jsonBody: { error: 'Unauthorized' } }
+
+    context.log('Starting WA State Parks sync...')
+    let upserted = 0
+    let offset = 0
+    const container = getTrailsContainer()
+
     while (true) {
       const url = new URL(PARKS_URL)
       url.searchParams.set('$limit', String(PAGE_SIZE))
@@ -41,15 +80,13 @@ async function waparksSyncHandler(req: HttpRequest, context: InvocationContext):
       // Only parks with trails
       url.searchParams.set('$where', 'trail_miles > 0 OR trails = \'Yes\'')
 
-      const res = await fetch(url.toString())
-      if (!res.ok) break
-      const records: WAParkRecord[] = await res.json()
+      const records = await fetchJsonWithTimeout<WAParkRecord[]>(url.toString())
       if (!records.length) break
 
-      for (const park of records) {
+      await runInBatches(records, UPSERT_BATCH_SIZE, async (park) => {
         const lat = parseFloat(park.latitude ?? '0')
         const lng = parseFloat(park.longitude ?? '0')
-        if (!lat || !lng) continue
+        if (!lat || !lng) return
 
         const name = park.site_name ?? park.park_name ?? 'Unknown Park'
         const trailMiles = parseFloat(park.trail_miles ?? '1')
@@ -85,7 +122,7 @@ async function waparksSyncHandler(req: HttpRequest, context: InvocationContext):
 
         await container.items.upsert(trailDoc)
         upserted++
-      }
+      })
 
       if (records.length < PAGE_SIZE) break
       offset += PAGE_SIZE

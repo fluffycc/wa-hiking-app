@@ -10,6 +10,8 @@ const TRAILS_URL = `${DNR_BASE}/Public_Recreation/WADNR_PUBLIC_Trails/MapServer/
 
 // Forest Road Information — has ROAD_MAINTENANCE_LEVEL (1-5)
 const ROADS_URL = `${DNR_BASE}/Public_Boundaries/WADNR_PUBLIC_FRO_Roads/MapServer/0/query`
+const FETCH_TIMEOUT_MS = 60_000
+const UPSERT_BATCH_SIZE = 25
 
 interface DNRTrailFeature {
   attributes: {
@@ -36,9 +38,46 @@ interface DNRRoadFeature {
   geometry?: { paths?: number[][][] }
 }
 
+function getSyncTokenFromRequest(req: HttpRequest): string | null {
+  const token =
+    req.headers.get('x-sync-token') ??
+    req.headers.get('authorization')?.replace(/^Bearer\s+/i, '') ??
+    new URL(req.url).searchParams.get('token')
+
+  return token?.trim() || null
+}
+
 function validateSyncToken(req: HttpRequest): boolean {
-  const token = req.headers.get('x-sync-token') ?? new URL(req.url).searchParams.get('token')
-  return token === process.env['SYNC_SECRET_TOKEN']
+  const token = getSyncTokenFromRequest(req)
+  const secret =
+    process.env['SYNC_SECRET_TOKEN'] ??
+    process.env['SYNC_TOKEN'] ??
+    process.env['SYNC_SECRET']
+
+  return !!token && !!secret && token === secret
+}
+
+async function fetchJsonWithTimeout<T>(url: string): Promise<T> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+
+  try {
+    const res = await fetch(url, { signal: controller.signal })
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`)
+    return await res.json() as T
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
+async function runInBatches<T>(
+  items: T[],
+  batchSize: number,
+  worker: (item: T) => Promise<void>
+): Promise<void> {
+  for (let i = 0; i < items.length; i += batchSize) {
+    await Promise.all(items.slice(i, i + batchSize).map(worker))
+  }
 }
 
 async function fetchAllPages<T>(baseUrl: string, params: Record<string, string>): Promise<T[]> {
@@ -51,9 +90,7 @@ async function fetchAllPages<T>(baseUrl: string, params: Record<string, string>)
     Object.entries({ ...params, resultOffset: String(offset), resultRecordCount: String(pageSize) })
       .forEach(([k, v]) => url.searchParams.set(k, v))
 
-    const res = await fetch(url.toString())
-    if (!res.ok) break
-    const data = await res.json() as { features?: T[]; exceededTransferLimit?: boolean }
+    const data = await fetchJsonWithTimeout<{ features?: T[]; exceededTransferLimit?: boolean }>(url.toString())
     if (!data.features?.length) break
     allFeatures.push(...data.features)
     if (!data.exceededTransferLimit) break
@@ -64,12 +101,12 @@ async function fetchAllPages<T>(baseUrl: string, params: Record<string, string>)
 }
 
 async function wadnrSyncHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-  if (!validateSyncToken(req)) return { status: 401, jsonBody: { error: 'Unauthorized' } }
-
-  context.log('Starting WA DNR sync...')
-  let upserted = 0
-
   try {
+    if (!validateSyncToken(req)) return { status: 401, jsonBody: { error: 'Unauthorized' } }
+
+    context.log('Starting WA DNR sync...')
+    let upserted = 0
+
     // Fetch WA DNR recreation trails
     const features = await fetchAllPages<DNRTrailFeature>(TRAILS_URL, {
       where: '1=1',
@@ -82,16 +119,16 @@ async function wadnrSyncHandler(req: HttpRequest, context: InvocationContext): P
     context.log(`WA DNR: ${features.length} trail features`)
     const container = getTrailsContainer()
 
-    for (const feat of features) {
+    await runInBatches(features, UPSERT_BATCH_SIZE, async (feat) => {
       const a = feat.attributes
-      if (!a.TRAIL_NAME || a.STATUS === 'Proposed') continue
+      if (!a.TRAIL_NAME || a.STATUS === 'Proposed') return
 
       // Extract lat/lng from geometry (point or first vertex of path)
       let lat = 0, lng = 0
       if (feat.geometry && 'x' in feat.geometry) {
         lng = feat.geometry.x; lat = feat.geometry.y
       }
-      if (!lat || !lng) continue
+      if (!lat || !lng) return
 
       const region = regionFromLatLng(lat, lng)
       const owner = a.MANAGING_ORGANIZATION?.includes('Parks') ? 'StateParks' :
@@ -134,7 +171,7 @@ async function wadnrSyncHandler(req: HttpRequest, context: InvocationContext): P
 
       await container.items.upsert(trailDoc)
       upserted++
-    }
+    })
 
     // ── Fetch forest road conditions and update nearby trails ────────────────
     context.log('Fetching WA DNR forest road conditions...')
