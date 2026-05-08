@@ -13,12 +13,21 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-const SURFACE_ICON: Record<string, string> = {
-  paved: '🛣', gravel: '🪨', dirt: '🌿', unknown: '❓'
+const SURFACE_LABEL: Record<string, string> = {
+  paved: 'Paved',
+  gravel: 'Gravel',
+  dirt: 'Dirt',
+  unknown: 'Unknown',
 }
-const CONDITION_ICON: Record<string, string> = {
-  excellent: '🟢', good: '🟡', rough: '🟠', very_rough: '🔴', unknown: '⚪'
+
+const CONDITION_LABEL: Record<string, string> = {
+  excellent: 'Excellent',
+  good: 'Good',
+  rough: 'Rough',
+  very_rough: 'Very rough',
+  unknown: 'Unknown',
 }
+
 const DNR_LEVEL_LABEL: Record<number, string> = {
   2: 'High clearance only',
   3: 'Passenger car (gravel)',
@@ -26,25 +35,42 @@ const DNR_LEVEL_LABEL: Record<number, string> = {
   5: 'Paved highway',
 }
 
-function RoadConditionBlock({ road }: { road: RoadCondition }) {
+function alertSuggestsClosureOrSnow(message: string): boolean {
+  return /\b(closed|closure|impassable|snow|avalanche|winter)\b/i.test(message)
+}
+
+function hasSnowOrClosureRisk(trail: Trail, activeAlerts: NonNullable<Trail['alerts']>): boolean {
+  return (
+    trail.conditions.snow === 'significant' ||
+    activeAlerts.some(alert => alert.type === 'closure' || alertSuggestsClosureOrSnow(alert.message))
+  )
+}
+
+function RoadConditionBlock({
+  road,
+  showConfidenceWarning,
+}: {
+  road: RoadCondition
+  showConfidenceWarning: boolean
+}) {
   return (
     <div className="bg-stone-50 border border-stone-100 rounded-xl p-3 space-y-2">
       <div className="flex gap-3 flex-wrap">
         <span className="text-sm">
-          {SURFACE_ICON[road.surface]} Surface: <strong className="capitalize">{road.surface}</strong>
+          Surface: <strong>{SURFACE_LABEL[road.surface] ?? road.surface}</strong>
         </span>
         <span className="text-sm">
-          {CONDITION_ICON[road.condition]} Condition: <strong className="capitalize">{road.condition.replace('_', ' ')}</strong>
+          Condition: <strong>{CONDITION_LABEL[road.condition] ?? road.condition.replace('_', ' ')}</strong>
         </span>
       </div>
       {road.dnrMaintenanceLevel && (
         <p className="text-xs text-trail-stone">
-          🏛 WA DNR Level {road.dnrMaintenanceLevel}: {DNR_LEVEL_LABEL[road.dnrMaintenanceLevel]}
+          WA DNR Level {road.dnrMaintenanceLevel}: {DNR_LEVEL_LABEL[road.dnrMaintenanceLevel]}
         </p>
       )}
       {road.notes && <p className="text-sm text-trail-stone">{road.notes}</p>}
-      {road.confidence !== 'high' && (
-        <p className="text-xs text-amber-600">⚠️ Confidence: {road.confidence} — verify before going</p>
+      {showConfidenceWarning && (
+        <p className="text-xs text-amber-600">Low confidence: snow or closure may affect access. Verify before going.</p>
       )}
     </div>
   )
@@ -54,25 +80,26 @@ export function TrailDetails({ trail }: Props) {
   const { isSaved, toggleSaved } = useSavedStore()
   const saved = isSaved(trail.id)
   const activeAlerts = trail.alerts?.filter(a => !a.expiresISO || new Date(a.expiresISO) > new Date()) ?? []
+  const showAccessConfidenceWarning = hasSnowOrClosureRisk(trail, activeAlerts)
 
   return (
     <div className="font-body">
-      {/* Header */}
       <div className="flex items-start justify-between gap-3 pb-4 border-b border-gray-100">
         <div>
           <h2 className="font-display font-bold text-trail-dark text-lg leading-tight">{trail.name}</h2>
-          <p className="text-sm text-trail-stone mt-0.5">{trail.region} · {trail.landOwner}</p>
+          <p className="text-sm text-trail-stone mt-0.5">{trail.region} / {trail.landOwner}</p>
           {trail.source && (
             <span className="text-xs text-gray-400 mt-0.5 block capitalize">Source: {trail.source.replace('_', ' ')}</span>
           )}
         </div>
-        <button onClick={() => toggleSaved(trail.id)}
-          className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center hover:bg-gray-100 transition-colors">
-          <span className="text-xl">{saved ? '❤️' : '🤍'}</span>
+        <button
+          onClick={() => toggleSaved(trail.id)}
+          className="flex-shrink-0 min-w-12 h-10 rounded-full bg-gray-50 px-3 text-xs font-semibold text-trail-dark hover:bg-gray-100 transition-colors"
+        >
+          {saved ? 'Saved' : 'Save'}
         </button>
       </div>
 
-      {/* Active alerts */}
       {activeAlerts.length > 0 && (
         <div className="py-3 space-y-2">
           {activeAlerts.map((alert, i) => (
@@ -80,24 +107,22 @@ export function TrailDetails({ trail }: Props) {
               ${alert.type === 'closure' ? 'bg-red-50 border-red-200 text-red-800' :
                 alert.type === 'warning' ? 'bg-amber-50 border-amber-200 text-amber-800' :
                 'bg-blue-50 border-blue-200 text-blue-800'}`}>
-              {alert.type === 'closure' ? '🚫' : alert.type === 'warning' ? '⚠️' : 'ℹ️'} {alert.message}
-              <span className="text-xs opacity-60 ml-1">— {alert.source}</span>
+              <strong className="capitalize">{alert.type}:</strong> {alert.message}
+              <span className="text-xs opacity-60 ml-1">- {alert.source}</span>
             </div>
           ))}
         </div>
       )}
 
-      {/* 1. Today at a glance */}
       <Section title="Today at a Glance">
         <BadgeRow trail={trail} />
         {trail.conditions.weatherHint && (
           <p className="mt-2 text-sm text-trail-stone bg-amber-50 rounded-lg px-3 py-2">
-            🌤 {trail.conditions.weatherHint}
+            {trail.conditions.weatherHint}
           </p>
         )}
       </Section>
 
-      {/* 2. Conditions */}
       <Section title="Conditions">
         <div className="grid grid-cols-3 gap-2 text-center">
           {[
@@ -115,7 +140,7 @@ export function TrailDetails({ trail }: Props) {
           <ul className="mt-3 space-y-1">
             {trail.conditions.notes.map((note, i) => (
               <li key={i} className="text-sm text-trail-stone flex gap-2">
-                <span className="text-trail-amber">•</span>{note}
+                <span className="text-trail-amber">-</span>{note}
               </li>
             ))}
           </ul>
@@ -127,16 +152,18 @@ export function TrailDetails({ trail }: Props) {
         )}
       </Section>
 
-      {/* 3. Access */}
       <Section title="Access / Road to Trailhead">
         {trail.roadCondition ? (
-          <RoadConditionBlock road={trail.roadCondition} />
+          <RoadConditionBlock
+            road={trail.roadCondition}
+            showConfidenceWarning={showAccessConfidenceWarning}
+          />
         ) : (
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-trail-dark capitalize">
               {trail.access.level.replace(/_/g, ' ')}
             </span>
-            {trail.access.confidence === 'low' && (
+            {showAccessConfidenceWarning && (
               <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">Low confidence</span>
             )}
           </div>
@@ -146,7 +173,6 @@ export function TrailDetails({ trail }: Props) {
         )}
       </Section>
 
-      {/* 4. Parking & Passes */}
       <Section title="Parking & Passes">
         <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
           <p className="text-sm font-semibold text-trail-dark capitalize">
@@ -155,13 +181,9 @@ export function TrailDetails({ trail }: Props) {
           {trail.parking.notes && (
             <p className="text-sm text-trail-stone mt-1">{trail.parking.notes}</p>
           )}
-          {trail.parking.confidence !== 'high' && (
-            <p className="text-xs text-orange-600 mt-1">⚠️ Verify before you go — confidence is {trail.parking.confidence}</p>
-          )}
         </div>
       </Section>
 
-      {/* 5. Basics */}
       <Section title="Basics">
         <div className="grid grid-cols-2 gap-2 text-sm">
           {[
@@ -183,7 +205,6 @@ export function TrailDetails({ trail }: Props) {
         )}
       </Section>
 
-      {/* 6. Trip reports */}
       <Section title="Recent Trip Reports">
         <p className="text-sm text-trail-stone italic">No reports yet. Be the first!</p>
       </Section>

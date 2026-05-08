@@ -16,7 +16,7 @@ export function TrailBottomSheet() {
   return (
     <div
       className={`fixed left-0 right-0 z-40 bg-trail-bg rounded-t-3xl shadow-sheet transition-all duration-300
-        ${isExpanded ? 'top-16 bottom-16' : 'bottom-16 h-56'}`}
+        ${isExpanded ? 'bottom-sheet-expanded' : 'above-bottom-nav h-56'}`}
     >
       {/* Drag handle */}
       <div

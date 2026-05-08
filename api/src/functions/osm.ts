@@ -214,13 +214,13 @@ async function osmSyncHandler(
             landOwner: owner,
             parking: {
               type: landOwnerToParking(owner),
-              confidence: 'low',
+              confidence: 'medium',
             },
 
             access: {
               level: 'unknown',
               notes: undefined,
-              confidence: 'low',
+              confidence: 'medium',
             },
 
             conditions: {

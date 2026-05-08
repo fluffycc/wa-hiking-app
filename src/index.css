@@ -5,11 +5,17 @@
 @layer base {
   html, body, #root {
     height: 100%;
+    min-height: 100dvh;
     margin: 0;
     padding: 0;
     font-family: 'DM Sans', sans-serif;
     background-color: #f8f6f1;
     -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   * {
@@ -30,6 +36,16 @@
     display: none;
   }
   .safe-area-bottom {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 12px);
+  }
+  .above-bottom-nav {
+    bottom: calc(4rem + max(env(safe-area-inset-bottom, 0px), 12px));
+  }
+  .bottom-sheet-expanded {
+    top: 4rem;
+    bottom: calc(4rem + max(env(safe-area-inset-bottom, 0px), 12px));
+  }
+  .feedback-float {
+    bottom: calc(5rem + max(env(safe-area-inset-bottom, 0px), 12px));
   }
 }

@@ -1,4 +1,5 @@
 import L from 'leaflet'
+import { useCallback, useEffect, useRef } from 'react'
 import { MapContainer, TileLayer, Marker, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
 import type { Trail, ConditionOverall } from '../../domain/types'
@@ -36,6 +37,38 @@ function RecenterMap({ trail }: { trail: Trail | null }) {
   return null
 }
 
+function ViewportTrailLoader() {
+  const map = useMap()
+  const loadTrails = useTrailStore(s => s.loadTrails)
+  const timerRef = useRef<number | null>(null)
+
+  const loadCurrentBounds = useCallback(() => {
+    if (timerRef.current) window.clearTimeout(timerRef.current)
+
+    timerRef.current = window.setTimeout(() => {
+      const bounds = map.getBounds()
+      void loadTrails({
+        north: bounds.getNorth(),
+        south: bounds.getSouth(),
+        east:  bounds.getEast(),
+        west:  bounds.getWest(),
+      })
+    }, 250)
+  }, [loadTrails, map])
+
+  useEffect(() => {
+    loadCurrentBounds()
+    map.on('moveend zoomend', loadCurrentBounds)
+
+    return () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current)
+      map.off('moveend zoomend', loadCurrentBounds)
+    }
+  }, [loadCurrentBounds, map])
+
+  return null
+}
+
 export function TrailMap() {
   const { filteredTrails } = useTrailStore()
   const { selectedTrailId, setSelectedTrailId } = useUiStore()
@@ -52,6 +85,7 @@ export function TrailMap() {
         attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a>'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
+      <ViewportTrailLoader />
       <RecenterMap trail={selected} />
       {filteredTrails.map(trail => (
         <Marker

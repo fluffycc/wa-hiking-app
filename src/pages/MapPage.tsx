@@ -5,14 +5,31 @@ import { useTrailStore } from '../state/useTrailStore'
 import { LoadingSpinner, ErrorState } from '../components/ui/LoadingSpinner'
 
 export function MapPage() {
-  const { searchQuery, setSearchQuery, filteredTrails, loading, error, loadTrails, trails, usingApi } = useTrailStore()
+  const {
+    searchQuery,
+    setSearchQuery,
+    filteredTrails,
+    loading,
+    error,
+    loadTrails,
+    trails,
+    usingApi,
+    totalTrails,
+    hasMore,
+  } = useTrailStore()
 
   useEffect(() => {
     if (!trails.length) loadTrails()
-  }, [])
+  }, [loadTrails, trails.length])
 
-  if (loading) return <LoadingSpinner message="Loading WA trails…" />
-  if (error)   return <ErrorState message={error} onRetry={loadTrails} />
+  if (loading && !trails.length) return <LoadingSpinner message="Loading WA trails…" />
+  if (error && !trails.length)   return <ErrorState message={error} onRetry={() => void loadTrails()} />
+
+  const trailCountLabel = usingApi
+    ? hasMore
+      ? `${filteredTrails.length} of ${totalTrails} trails in view`
+      : `${filteredTrails.length} trails in view`
+    : `${filteredTrails.length} sample trails`
 
   return (
     <div className="relative flex flex-col h-full min-h-0">
@@ -31,7 +48,7 @@ export function MapPage() {
         </div>
         <div className="flex gap-2 items-center pointer-events-auto">
           <div className="text-xs text-trail-stone font-body bg-white/80 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">
-            {filteredTrails.length} trails
+            {trailCountLabel}
           </div>
           {!usingApi && (
             <div className="text-xs text-amber-700 font-body bg-amber-50/90 backdrop-blur-sm rounded-full px-3 py-1 shadow-sm">

@@ -3,8 +3,10 @@ import type { Trail } from '../domain/types'
 import { filterTrails, searchTrails, sortTrails, DEFAULT_FILTERS } from '../domain/filters'
 import type { FilterState, SortKey } from '../domain/filters'
 import { fetchTrails } from '../services/trailsApi'
+import type { TrailBounds } from '../services/trailsApi'
 
 let _sampleData: Trail[] | null = null
+let _loadSeq = 0
 async function loadSampleData(): Promise<Trail[]> {
   if (_sampleData) return _sampleData
   const m = await import('../data/trails.sample.json')
@@ -21,7 +23,10 @@ interface TrailStore {
   sortKey:        SortKey
   filteredTrails: Trail[]
   usingApi:       boolean
-  loadTrails:     () => Promise<void>
+  totalTrails:    number
+  hasMore:        boolean
+  viewportBounds: TrailBounds | null
+  loadTrails:     (bounds?: TrailBounds) => Promise<void>
   setSearchQuery: (q: string) => void
   setSortKey:     (k: SortKey) => void
   setFilter:      <K extends keyof FilterState>(key: K, value: FilterState[K]) => void
@@ -32,24 +37,73 @@ function deriveFiltered(trails: Trail[], query: string, filters: FilterState, so
   return sortTrails(filterTrails(searchTrails(trails, query), filters), sort)
 }
 
-export const useTrailStore = create<TrailStore>((set) => ({
+export const useTrailStore = create<TrailStore>((set, get) => ({
   trails: [], loading: false, error: null,
   searchQuery: '', sortKey: 'relevance',
   activeFilters: { ...DEFAULT_FILTERS },
   filteredTrails: [], usingApi: false,
+  totalTrails: 0, hasMore: false, viewportBounds: null,
 
-  loadTrails: async () => {
-    set({ loading: true, error: null })
+  loadTrails: async (bounds) => {
+    const requestSeq = ++_loadSeq
+    const state = get()
+    const nextBounds = bounds ?? state.viewportBounds ?? undefined
+    const isInitialLoad = state.trails.length === 0
+
+    set({
+      loading: isInitialLoad,
+      error: null,
+      viewportBounds: nextBounds ?? null,
+    })
+
     try {
-      const data = await fetchTrails(DEFAULT_FILTERS, '', 'relevance', 1, 500)
+      const latest = get()
+      const data = await fetchTrails(
+        latest.activeFilters,
+        latest.searchQuery,
+        latest.sortKey,
+        1,
+        1000,
+        nextBounds,
+      )
+      if (requestSeq !== _loadSeq) return
       const trails = data.trails
-      set({ trails, filteredTrails: deriveFiltered(trails, '', DEFAULT_FILTERS, 'relevance'), loading: false, usingApi: true })
+      set({
+        trails,
+        filteredTrails: deriveFiltered(trails, latest.searchQuery, latest.activeFilters, latest.sortKey),
+        loading: false,
+        usingApi: true,
+        totalTrails: data.total,
+        hasMore: data.hasMore,
+      })
     } catch {
+      if (requestSeq !== _loadSeq) return
+      if (get().trails.length) {
+        set({ loading: false, error: 'Could not update trails for this map area' })
+        return
+      }
+
       try {
         const trails = await loadSampleData()
-        set({ trails, filteredTrails: deriveFiltered(trails, '', DEFAULT_FILTERS, 'relevance'), loading: false, usingApi: false })
+        if (requestSeq !== _loadSeq) return
+        const latest = get()
+        set({
+          trails,
+          filteredTrails: deriveFiltered(trails, latest.searchQuery, latest.activeFilters, latest.sortKey),
+          loading: false,
+          usingApi: false,
+          totalTrails: trails.length,
+          hasMore: false,
+        })
       } catch {
-        set({ loading: false, error: 'Could not load trails', trails: [], filteredTrails: [] })
+        set({
+          loading: false,
+          error: 'Could not load trails',
+          trails: [],
+          filteredTrails: [],
+          totalTrails: 0,
+          hasMore: false,
+        })
       }
     }
   },

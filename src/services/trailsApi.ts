@@ -9,12 +9,20 @@ export interface TrailsApiResponse {
   hasMore: boolean
 }
 
+export interface TrailBounds {
+  north: number
+  south: number
+  east:  number
+  west:  number
+}
+
 export async function fetchTrails(
   filters: FilterState,
   query:   string,
   sort:    SortKey,
   page   = 1,
-  limit  = 200,
+  limit  = 500,
+  bounds?: TrailBounds,
 ): Promise<TrailsApiResponse> {
   const params = new URLSearchParams()
   params.set('page',  String(page))
@@ -28,6 +36,12 @@ export async function fetchTrails(
   if (filters.maxMiles         !== null)  params.set('maxMiles',  String(filters.maxMiles))
   if (filters.difficulty.length)          params.set('difficulty', filters.difficulty.join(','))
   if (filters.region.length)              params.set('region',     filters.region.join(','))
+  if (bounds) {
+    params.set('north', String(bounds.north))
+    params.set('south', String(bounds.south))
+    params.set('east',  String(bounds.east))
+    params.set('west',  String(bounds.west))
+  }
 
   const res = await fetch(`/api/trails?${params}`)
   if (!res.ok) throw new Error(`API error ${res.status}`)

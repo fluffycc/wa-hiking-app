@@ -16,7 +16,7 @@ export function AppShell() {
   const { activeTab, setActiveTab } = useUiStore()
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-trail-bg">
+    <div className="flex flex-col h-dvh w-screen overflow-hidden bg-trail-bg">
       {/* Page content */}
       <div className="flex-1 overflow-hidden relative min-h-0">
         <div className={activeTab === 'map'     ? 'block h-full' : 'hidden'}><MapPage /></div>

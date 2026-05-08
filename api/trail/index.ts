@@ -1,29 +1,67 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { getTrailsContainer } from '../shared/cosmosClient'
 
-async function trailHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
-  const id = new URL(req.url).searchParams.get('id')
-  if (!id) return { status: 400, jsonBody: { error: 'Missing id parameter' } }
+async function trailsHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const p = Object.fromEntries(new URL(req.url).searchParams)
+  const page   = Math.max(1, parseInt(p['page']  ?? '1'))
+  const limit  = Math.min(1000, Math.max(1, parseInt(p['limit'] ?? '50')))
+  const offset = (page - 1) * limit
+
+  const conditions: string[] = []
+  const params: { name: string; value: unknown }[] = []
+
+  if (p['region']) {
+    const regions = p['region'].split(',').map((r: string, i: number) => {
+      params.push({ name: `@region${i}`, value: r.trim() })
+      return `@region${i}`
+    })
+    conditions.push(`t.region IN (${regions.join(', ')})`)
+  }
+  if (p['north'] && p['south'] && p['east'] && p['west']) {
+    conditions.push('t.lat >= @south AND t.lat <= @north AND t.lng >= @west AND t.lng <= @east')
+    params.push(
+      { name: '@north', value: parseFloat(p['north']) },
+      { name: '@south', value: parseFloat(p['south']) },
+      { name: '@east',  value: parseFloat(p['east']) },
+      { name: '@west',  value: parseFloat(p['west']) },
+    )
+  }
+  if (p['condition'] && p['condition'] !== 'any') { conditions.push('t.conditions.overall = @condition'); params.push({ name: '@condition', value: p['condition'] }) }
+  if (p['access']    && p['access']    !== 'any') { conditions.push('t.access.level = @access');          params.push({ name: '@access',    value: p['access'] }) }
+  if (p['parking']   && p['parking']   !== 'any') { conditions.push('t.parking.type = @parking');         params.push({ name: '@parking',   value: p['parking'] }) }
+  if (p['maxMiles'])   { conditions.push('t.miles <= @maxMiles');             params.push({ name: '@maxMiles',  value: parseFloat(p['maxMiles']) }) }
+  if (p['difficulty']) {
+    const diffs = p['difficulty'].split(',').map((d: string, i: number) => {
+      params.push({ name: `@diff${i}`, value: d.trim() })
+      return `@diff${i}`
+    })
+    conditions.push(`t.difficulty IN (${diffs.join(', ')})`)
+  }
+  if (p['q']) {
+    conditions.push('(CONTAINS(LOWER(t.name), @q) OR CONTAINS(LOWER(t.region), @q))')
+    params.push({ name: '@q', value: p['q'].toLowerCase() })
+  }
+
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
+  const sortMap: Record<string, string> = {
+    miles_asc: 't.miles ASC', elevation_asc: 't.elevationGainFt ASC',
+    name_asc: 't.name ASC', relevance: 't._ts DESC',
+  }
+  const orderBy = sortMap[p['sort'] ?? 'relevance'] ?? 't._ts DESC'
 
   try {
     const container = getTrailsContainer()
-    const { resources } = await container.items
-      .query({
-        query: 'SELECT * FROM t WHERE t.id = @id',
-        parameters: [{ name: '@id', value: id }],
-      }, { enableCrossPartitionQuery: true })
-      .fetchAll()
-
-    if (!resources.length) return { status: 404, jsonBody: { error: 'Trail not found' } }
-    return { status: 200, jsonBody: resources[0] }
+    const [countRes, dataRes] = await Promise.all([
+      container.items.query({ query: `SELECT VALUE COUNT(1) FROM t ${where}`, parameters: params }, { enableCrossPartitionQuery: true }).fetchAll(),
+      container.items.query({ query: `SELECT * FROM t ${where} ORDER BY ${orderBy} OFFSET ${offset} LIMIT ${limit}`, parameters: params }, { enableCrossPartitionQuery: true }).fetchAll(),
+    ])
+    const total = (countRes.resources[0] as number) ?? 0
+    return { status: 200, jsonBody: { trails: dataRes.resources, total, page, limit, hasMore: offset + dataRes.resources.length < total } }
   } catch (err) {
-    context.error('GET /api/trail error', err)
-    return { status: 500, jsonBody: { error: 'Database error' } }
+    const message = err instanceof Error ? err.message : String(err)
+    context.error('GET /api/trails error', message)
+    return { status: 500, jsonBody: { ok: false, error: message } }
   }
 }
 
-app.http('trail', {
-  methods: ['GET'],
-  authLevel: 'anonymous',
-  handler: trailHandler,
-})
+app.http('trails', { methods: ['GET'], authLevel: 'anonymous', handler: trailsHandler })

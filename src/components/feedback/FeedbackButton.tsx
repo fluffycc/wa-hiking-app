@@ -34,21 +34,31 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
   }
 
   const modal = (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '16px' }}>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+        padding: '16px',
+        paddingBottom: 'max(16px, env(safe-area-inset-bottom, 0px))',
+      }}
+    >
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} onClick={onClose} />
       <div style={{ position: 'relative', background: 'white', borderRadius: '24px', width: '100%', maxWidth: '28rem', boxShadow: '0 25px 50px rgba(0,0,0,0.25)' }}>
         <div className="flex items-center justify-between p-5 border-b border-gray-100">
           <h3 className="font-display font-bold text-trail-dark text-lg">Send Feedback</h3>
-          <button onClick={onClose} className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200">✕</button>
+          <button onClick={onClose} aria-label="Close feedback" className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200">x</button>
         </div>
 
         {status === 'success' ? (
           <div className="p-6 text-center">
-            <div className="text-4xl mb-3">🎉</div>
             <p className="font-display font-semibold text-trail-dark mb-1">Thanks for the feedback!</p>
             {issueUrl && (
               <a href={issueUrl} target="_blank" rel="noopener noreferrer"
-                className="text-sm text-trail-green underline break-all">View issue on GitHub →</a>
+                className="text-sm text-trail-green underline break-all">View issue on GitHub -&gt;</a>
             )}
             <button onClick={onClose} className="mt-4 w-full bg-trail-green text-white rounded-2xl py-3 font-display font-semibold">Done</button>
           </div>
@@ -72,11 +82,11 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
                 className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-body focus:outline-none focus:ring-2 focus:ring-trail-green/30 resize-none" />
             </div>
             {status === 'error' && (
-              <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">⚠️ {errorMsg}</p>
+              <p className="text-sm text-red-600 bg-red-50 rounded-lg px-3 py-2">{errorMsg}</p>
             )}
             <button onClick={submit} disabled={!message.trim() || status === 'submitting'}
               className="w-full bg-trail-green text-white font-display font-semibold rounded-2xl py-3.5 disabled:opacity-50 hover:bg-trail-dark transition-colors">
-              {status === 'submitting' ? '⏳ Sending…' : 'Send Feedback'}
+              {status === 'submitting' ? 'Sending...' : 'Send Feedback'}
             </button>
           </div>
         )}
@@ -89,16 +99,35 @@ function FeedbackModal({ onClose }: { onClose: () => void }) {
 
 export function FeedbackButton() {
   const [open, setOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
 
   const button = (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        style={{ position: 'fixed', bottom: '80px', right: '16px', zIndex: 9998 }}
-        className="bg-trail-dark text-white font-body font-medium text-sm rounded-full px-4 py-2.5 shadow-lg hover:bg-trail-green transition-colors flex items-center gap-1.5"
-      >
-        💬 Feedback
-      </button>
+      {collapsed ? (
+        <button
+          onClick={() => setCollapsed(false)}
+          aria-label="Show feedback"
+          className="feedback-float fixed right-3 z-[9998] w-10 h-10 bg-white text-trail-dark border border-gray-200 font-body font-semibold text-sm rounded-full shadow-lg hover:bg-gray-50 transition-colors"
+        >
+          ?
+        </button>
+      ) : (
+        <div className="feedback-float fixed right-3 z-[9998] flex items-center gap-1.5">
+          <button
+            onClick={() => setOpen(true)}
+            className="bg-trail-dark text-white font-body font-medium text-sm rounded-full px-4 py-2.5 shadow-lg hover:bg-trail-green transition-colors"
+          >
+            Feedback
+          </button>
+          <button
+            onClick={() => setCollapsed(true)}
+            aria-label="Hide feedback"
+            className="w-9 h-9 rounded-full bg-white text-trail-stone border border-gray-200 shadow-lg hover:bg-gray-50 transition-colors"
+          >
+            x
+          </button>
+        </div>
+      )}
       {open && <FeedbackModal onClose={() => setOpen(false)} />}
     </>
   )
