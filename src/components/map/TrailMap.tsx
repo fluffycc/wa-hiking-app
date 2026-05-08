@@ -8,7 +8,6 @@ import { useTrailStore } from '../../state/useTrailStore'
 
 const PIN_COLORS = {
   go: '#22c55e',
-  caution: '#f59e0b',
   closed: '#ef4444',
 }
 
@@ -52,13 +51,8 @@ function trailHasClosure(trail: Trail): boolean {
   )
 }
 
-function trailHasSignificantSnow(trail: Trail): boolean {
-  return trail.conditions.snow === 'significant'
-}
-
 function getPinColor(trail: Trail): string {
   if (trailHasClosure(trail)) return PIN_COLORS.closed
-  if (trailHasSignificantSnow(trail)) return PIN_COLORS.caution
   return PIN_COLORS.go
 }
 

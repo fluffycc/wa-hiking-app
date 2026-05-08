@@ -15,6 +15,13 @@ function normalizeSearch(value: string) {
     .trim()
 }
 
+function normalizeTrailIdentity(value: string) {
+  return normalizeSearch(value.replace(/\([^)]*\)/g, ''))
+    .replace(/\btrail\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
 function scoreSuggestion(query: string, trail: Trail) {
   const q = normalizeSearch(query)
   const name = normalizeSearch(trail.name)
@@ -29,9 +36,7 @@ function scoreSuggestion(query: string, trail: Trail) {
 }
 
 function suggestionLocationKey(trail: Trail) {
-  const lat = Math.round(trail.lat * 100)
-  const lng = Math.round(trail.lng * 100)
-  return `${normalizeSearch(trail.name)}|${trail.region}|${lat}|${lng}`
+  return `${normalizeTrailIdentity(trail.name)}|${trail.region}`
 }
 
 function trailDataQuality(trail: Trail) {
@@ -103,7 +108,7 @@ export function MapPage() {
 
     setSearchLoading(true)
     const timeout = window.setTimeout(() => {
-      fetchTrails(DEFAULT_FILTERS, query, 'relevance', 1, 100)
+      fetchTrails(DEFAULT_FILTERS, query, 'relevance', 1, 60)
         .then(data => {
           if (requestSeq === searchSeqRef.current) setSuggestions(rankSuggestions(query, data.trails))
         })
@@ -113,7 +118,7 @@ export function MapPage() {
         .finally(() => {
           if (requestSeq === searchSeqRef.current) setSearchLoading(false)
         })
-    }, 220)
+    }, 120)
 
     return () => window.clearTimeout(timeout)
   }, [mapSearch])

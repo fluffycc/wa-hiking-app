@@ -20,10 +20,9 @@ WA Hiking App is a mobile-first Washington trail map. It should feel practical, 
 Keep pin colors simple:
 
 - Red only for trail-specific closure.
-- Yellow only for significant snow coverage.
 - Green for everything else.
 
-Do not make a dot yellow because parking is unknown, access is unknown, WSDOT has a broad pass advisory, the road is rough, mud is possible, or `conditions.overall` is generically `caution`. Those warnings belong inside the trail details panel.
+Do not make a dot yellow because parking is unknown, access is unknown, WSDOT has a broad pass advisory, the road is rough, snow is present, mud is possible, or `conditions.overall` is generically `caution`. Those warnings belong inside the trail details panel.
 
 ## Data Pipeline
 
@@ -37,7 +36,7 @@ Current sync functions:
 - `sync-wta`
 - `sync-conditions`
 
-WTA enrichment is incremental by design. It marks checked trails so repeated workflow runs make progress without crawling WTA too aggressively.
+WTA enrichment is incremental by design. It prioritizes trails with unknown parking and marks checked trails so repeated workflow runs make progress without crawling WTA too aggressively.
 
 ## Search
 

@@ -10,6 +10,8 @@ interface CachedTrailsResponse {
   body: unknown
 }
 
+type TrailDoc = Record<string, any>
+
 const responseCache = new Map<string, CachedTrailsResponse>()
 
 function getRequestCacheKey(req: HttpRequest): string {
@@ -28,13 +30,86 @@ function rememberResponse(key: string, body: unknown): void {
   if (oldestKey) responseCache.delete(oldestKey)
 }
 
+function normalizeTrailName(value: unknown): string {
+  return String(value ?? '')
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\btrail\b/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function trailKey(trail: TrailDoc): string {
+  return `${normalizeTrailName(trail.name)}|${String(trail.region ?? '')}`
+}
+
+function trailQuality(trail: TrailDoc): number {
+  let score = 0
+  if (trail.parking?.type && trail.parking.type !== 'unknown') score += 4
+  if (trail.access?.level && trail.access.level !== 'unknown') score += 2
+  if (trail.roadCondition?.condition && trail.roadCondition.condition !== 'unknown') score += 1
+  if (trail.wta?.status === 'matched') score += 4
+  if (trail.source === 'wadnr' || trail.source === 'wa_parks') score += 2
+  if (trail.source === 'osm') score -= 1
+  return score
+}
+
+function searchScore(query: string | undefined, trail: TrailDoc): number {
+  if (!query) return 0
+
+  const q = normalizeTrailName(query)
+  const name = normalizeTrailName(trail.name)
+  const words = name.split(' ')
+
+  if (name === q) return 0
+  if (name.startsWith(q)) return 1
+  if (words.some(word => word.startsWith(q))) return 2
+  if (name.includes(` ${q} `) || name.endsWith(` ${q}`)) return 3
+  if (name.includes(q)) return 4
+  return 99
+}
+
+function uniqueTrails(resources: TrailDoc[], query: string | undefined, limit: number): TrailDoc[] {
+  const bestByKey = new Map<string, TrailDoc>()
+
+  for (const trail of resources) {
+    const key = trailKey(trail)
+    if (!key.trim()) continue
+
+    const existing = bestByKey.get(key)
+    if (!existing || trailQuality(trail) > trailQuality(existing)) {
+      bestByKey.set(key, trail)
+    }
+  }
+
+  const trails = [...bestByKey.values()]
+  if (query) {
+    trails.sort((a, b) => {
+      const scoreDiff = searchScore(query, a) - searchScore(query, b)
+      if (scoreDiff !== 0) return scoreDiff
+
+      const qualityDiff = trailQuality(b) - trailQuality(a)
+      if (qualityDiff !== 0) return qualityDiff
+
+      return String(a.name ?? '').localeCompare(String(b.name ?? ''))
+    })
+  }
+
+  return trails.slice(0, limit)
+}
+
 async function trailsHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const p = Object.fromEntries(new URL(req.url).searchParams)
   const page   = Math.max(1, parseInt(p['page']  ?? '1'))
   const limit  = Math.min(100, Math.max(1, parseInt(p['limit'] ?? '50')))
   const offset = (page - 1) * limit
-  const fetchLimit = limit + 1
   const hasBounds = !!(p['north'] && p['south'] && p['east'] && p['west'])
+  const rawFetchLimit = p['q']
+    ? Math.min(180, limit * 3 + 1)
+    : hasBounds
+      ? Math.min(160, limit + 61)
+      : limit + 1
   const requestCacheKey = getRequestCacheKey(req)
   const cached = responseCache.get(requestCacheKey)
 
@@ -93,16 +168,16 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
 
   try {
     const container = getTrailsContainer()
-    const useFastViewportQuery = hasBounds && offset === 0 && (p['sort'] ?? 'relevance') === 'relevance'
-    const query = useFastViewportQuery
-      ? `SELECT TOP ${fetchLimit} * FROM t ${where}`
-      : `SELECT * FROM t ${where} ORDER BY ${orderBy} OFFSET ${offset} LIMIT ${fetchLimit}`
+    const useFastFirstPageQuery = offset === 0 && (p['sort'] ?? 'relevance') === 'relevance'
+    const query = useFastFirstPageQuery
+      ? `SELECT TOP ${rawFetchLimit} * FROM t ${where}`
+      : `SELECT * FROM t ${where} ORDER BY ${orderBy} OFFSET ${offset} LIMIT ${rawFetchLimit}`
     const dataRes = await container.items.query(
       { query, parameters: params },
       { enableCrossPartitionQuery: true }
     ).fetchAll()
-    const trails = dataRes.resources.slice(0, limit)
-    const hasMore = dataRes.resources.length > limit
+    const trails = uniqueTrails(dataRes.resources, p['q'], limit)
+    const hasMore = dataRes.resources.length > trails.length
     const body = { trails, total: offset + trails.length, page, limit, hasMore }
     rememberResponse(requestCacheKey, body)
 

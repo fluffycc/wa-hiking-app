@@ -2,12 +2,14 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { getTrailsContainer } from '../../shared/cosmosClient'
 
 const WTA_SEARCH_URL = 'https://www.wta.org/go-outside/hikes/hike_search'
+const WTA_HIKE_URL = 'https://www.wta.org/go-hiking/hikes'
 const FETCH_TIMEOUT_MS = 20_000
-const DEFAULT_LIMIT = 10
-const MAX_LIMIT = 50
+const DEFAULT_LIMIT = 25
+const MAX_LIMIT = 75
 const DETAIL_BATCH_SIZE = 2
-const MAX_RUN_MS = 45_000
+const MAX_RUN_MS = 110_000
 const USER_AGENT = 'WAHikingApp/1.0 (contact: you@example.com)'
+const textCache = new Map<string, string>()
 
 type ParkingPassType = 'free' | 'discover_pass' | 'nw_forest_pass' | 'national_park_fee' | 'unknown'
 type AccessLevel = 'sedan_ok' | 'rough' | 'high_clearance' | '4x4_only' | 'unknown'
@@ -78,6 +80,9 @@ function validateSyncToken(req: HttpRequest): boolean {
 }
 
 async function fetchTextWithTimeout(url: string): Promise<string> {
+  const cached = textCache.get(url)
+  if (cached) return cached
+
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
 
@@ -87,9 +92,19 @@ async function fetchTextWithTimeout(url: string): Promise<string> {
       signal: controller.signal,
     })
     if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`)
-    return await res.text()
+    const text = await res.text()
+    textCache.set(url, text)
+    return text
   } finally {
     clearTimeout(timeout)
+  }
+}
+
+async function tryFetchText(url: string): Promise<string | null> {
+  try {
+    return await fetchTextWithTimeout(url)
+  } catch {
+    return null
   }
 }
 
@@ -131,6 +146,20 @@ function normalizeName(value: string): string {
     .trim()
 }
 
+function slugFromName(value: string): string {
+  return normalizeName(value)
+    .replace(/\s+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+function extractPageTitle(html: string): string | undefined {
+  const h1 = html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1]
+  if (h1) return stripTags(h1)
+
+  const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
+  return title ? stripTags(title).replace(/\s+[-\u2013\u2014]\s+Washington Trails Association$/i, '') : undefined
+}
+
 function extractSearchLinks(html: string): Array<{ url: string; name: string }> {
   const links = new Map<string, string>()
   const pattern = /<a[^>]+href="(https:\/\/www\.wta\.org\/go-hiking\/hikes\/[^"#?]+)"[^>]*>([\s\S]*?)<\/a>/g
@@ -144,6 +173,14 @@ function extractSearchLinks(html: string): Array<{ url: string; name: string }> 
 }
 
 async function findWtaTrail(trailName: string): Promise<{ url: string; name: string } | null> {
+  const target = normalizeName(trailName)
+  const directUrl = `${WTA_HIKE_URL}/${slugFromName(trailName)}`
+  const directHtml = await tryFetchText(directUrl)
+  if (directHtml) {
+    const directName = extractPageTitle(directHtml) ?? trailName
+    if (normalizeName(directName) === target) return { url: directUrl, name: directName }
+  }
+
   const url = new URL(WTA_SEARCH_URL)
   url.searchParams.set('searchabletext', trailName)
 
@@ -151,7 +188,6 @@ async function findWtaTrail(trailName: string): Promise<{ url: string; name: str
   const links = extractSearchLinks(html)
   if (!links.length) return null
 
-  const target = normalizeName(trailName)
   return (
     links.find(link => normalizeName(link.name) === target) ??
     links.find(link => {
@@ -169,8 +205,14 @@ function extractSection(html: string, title: string): string | undefined {
 }
 
 function extractParkingLabel(html: string): string | undefined {
-  const match = html.match(/Parking Pass\/Entry Fee<\/h4>([\s\S]*?)(?=<\/div>|<h[2-4]|$)/i)
-  return match?.[1] ? stripTags(match[1]) : undefined
+  const match = html.match(/<h[2-5][^>]*>\s*Parking Pass\/Entry Fee\s*<\/h[2-5]>([\s\S]*?)(?=<h[2-5][^>]*>|<div class="wta-sidebar-layout__sidebar"|$)/i)
+  if (!match?.[1]) return undefined
+
+  const label = stripTags(match[1])
+    .replace(/^:+/, '')
+    .trim()
+
+  return label || undefined
 }
 
 function parkingTypeFromLabel(label?: string): ParkingPassType | undefined {
@@ -327,18 +369,30 @@ async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Pro
     const url = new URL(req.url)
     const limitParam = Number(url.searchParams.get('limit') ?? DEFAULT_LIMIT)
     const force = url.searchParams.get('force') === 'true'
+    const name = url.searchParams.get('name')?.trim()
     const limit = Math.min(MAX_LIMIT, Math.max(1, Number.isFinite(limitParam) ? limitParam : DEFAULT_LIMIT))
     const container = getTrailsContainer()
-
+    const where = name
+      ? 'WHERE IS_DEFINED(t.name) AND CONTAINS(LOWER(t.name), @name)'
+      : force
+        ? 'WHERE IS_DEFINED(t.name)'
+        : [
+            'WHERE IS_DEFINED(t.name) AND (',
+            'NOT IS_DEFINED(t.wta.syncedAt)',
+            "OR NOT IS_DEFINED(t.parking.type)",
+            "OR t.parking.type = 'unknown'",
+            ')',
+          ].join(' ')
     const querySpec = {
       query: [
         `SELECT TOP ${limit} t.id, t.pk, t.name, t.region, t.parking, t.access, t.roadCondition, t.alerts`,
         'FROM t',
-        force ? 'WHERE IS_DEFINED(t.name)' : 'WHERE IS_DEFINED(t.name) AND NOT IS_DEFINED(t.wta.syncedAt)',
+        where,
       ].join(' '),
+      parameters: name ? [{ name: '@name', value: name.toLowerCase() }] : [],
     }
 
-    context.log(`[WTA][${requestId}] query start limit=${limit} force=${force}`)
+    context.log(`[WTA][${requestId}] query start limit=${limit} force=${force} name=${name ?? '<none>'}`)
     const { resources } = await container.items.query(querySpec, { enableCrossPartitionQuery: true }).fetchAll()
     const trails = (resources ?? []) as TrailProjection[]
     context.log(`[WTA][${requestId}] trails loaded: ${trails.length}`)

@@ -40,10 +40,9 @@ WSDOT is intentionally not treated as proof of trail closure because pass closur
 Trail dots are deliberately conservative:
 
 - Red: actual trail-specific closure.
-- Yellow: significant snow coverage.
-- Green: everything else, including road cautions, rough access, pass advisories, parking uncertainty, and unknown access.
+- Green: everything else, including snow, road cautions, rough access, pass advisories, parking uncertainty, and unknown access.
 
-Access warnings can still appear as yellow information in the trail details panel without turning the map dot yellow.
+Access and condition warnings can still appear as yellow information in the trail details panel without turning the map dot yellow.
 
 ## Local Development
 
@@ -106,7 +105,7 @@ Available manual modes:
 - `conditions`: NOAA and WSDOT warning refresh.
 - `all`: full pipeline.
 
-WTA sync is intentionally incremental (`limit=10` in the workflow) because it reads public WTA pages and should not run as a heavy crawler.
+WTA sync is intentionally incremental (`limit=25` in the workflow) because it reads public WTA pages and should not run as a heavy crawler. It prioritizes trails that still have unknown parking.
 
 ## Build And Test
 
