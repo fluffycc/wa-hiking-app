@@ -31,7 +31,7 @@ The app answers four practical questions:
 | WA State Parks / wa.gov | State park trails and Discover Pass defaults | None |
 | NOAA Weather | Snow, rain, temperature by WA region | None |
 | WSDOT Pass Conditions | Mountain pass access warnings only | Free key |
-| Washington Trails Association | Enriched parking pass, WTA link, road/access notes | Public pages |
+| Washington Trails Association | Authoritative trail stats, parking pass, WTA link, road/access notes | Public pages |
 
 WSDOT is intentionally not treated as proof of trail closure because pass closures are too broad for individual trails.
 
@@ -107,7 +107,7 @@ Available manual modes:
 
 The scheduled workflow runs the full pipeline twice per day at `03:00` and `15:00` UTC, which is roughly evening and morning Pacific time depending on daylight saving time.
 
-WTA sync is intentionally incremental (`limit=10` in the workflow) because it reads public WTA pages through Azure Static Web Apps, which can fail long requests near the 45-second mark. It prioritizes trails that still have unknown parking.
+WTA sync is intentionally incremental (`limit=20` in the workflow) because it reads public WTA pages through Azure Static Web Apps, which can fail long requests near the 45-second mark. It prioritizes trails missing WTA stats or permit data. WTA should overwrite broad OSM defaults for distance, elevation gain, difficulty, route type, and parking pass.
 
 ## Build And Test
 
@@ -134,9 +134,11 @@ Azure Functions v4 route registration is explicit. Every function in `api/src/fu
 The map uses three layers of caching:
 
 - Coarse viewport rounding before requesting trails.
-- Short client-side viewport cache in Zustand.
+- 30-minute client-side viewport cache in Zustand.
+- 30-minute persisted browser cache for `/api/trails` responses.
 - Short warm-instance response cache in the Azure Function.
 - API `Cache-Control` headers for `/api/trails`.
 - Viewport results capped at 50 trails to keep the map light on mobile.
+- Map panning is constrained to Washington to avoid unnecessary out-of-state work.
 
 Cosmos DB is still the main latency source for brand-new map areas. A future map-tile or geohash endpoint would be the next major speed upgrade.

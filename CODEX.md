@@ -36,7 +36,7 @@ Current sync functions:
 - `sync-wta`
 - `sync-conditions`
 
-The scheduled GitHub workflow runs the full sync chain twice per day. WTA enrichment is incremental by design and must stay under the Static Web Apps backend timeout, so keep its scheduled limit small. It prioritizes trails with unknown parking and marks checked trails so repeated workflow runs make progress without crawling WTA too aggressively.
+The scheduled GitHub workflow runs the full sync chain twice per day. WTA enrichment is incremental by design and must stay under the Static Web Apps backend timeout, so keep its scheduled limit modest. It prioritizes trails missing WTA stats or permit data and marks checked trails so repeated workflow runs make progress without crawling WTA too aggressively. WTA should overwrite broad OSM defaults for distance, elevation gain, difficulty, route type, and parking pass.
 
 ## Search
 
@@ -55,9 +55,11 @@ This keeps searches like `lake` from returning an alphabetized list of unrelated
 The current performance strategy is:
 
 - Round viewport bounds before requests.
-- Cache viewport responses in Zustand for a few minutes.
+- Cache viewport responses in Zustand for 30 minutes.
+- Persist recent `/api/trails` responses in browser storage for 30 minutes.
 - Send cache headers from `/api/trails`.
 - Keep viewport result size capped at 50.
+- Keep map movement constrained to Washington.
 
 The next meaningful upgrade is a geohash or map-tile style trail endpoint backed by precomputed cells in Cosmos.
 

@@ -1,8 +1,8 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions'
 import { getTrailsContainer } from '../shared/cosmosClient'
 
-const CACHE_CONTROL = 'public, max-age=300, s-maxage=600, stale-while-revalidate=900'
-const RESPONSE_CACHE_TTL_MS = 5 * 60 * 1000
+const CACHE_CONTROL = 'public, max-age=900, s-maxage=1800, stale-while-revalidate=1800'
+const RESPONSE_CACHE_TTL_MS = 15 * 60 * 1000
 const RESPONSE_CACHE_MAX_ENTRIES = 200
 
 interface CachedTrailsResponse {
@@ -106,9 +106,9 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
   const offset = (page - 1) * limit
   const hasBounds = !!(p['north'] && p['south'] && p['east'] && p['west'])
   const rawFetchLimit = p['q']
-    ? Math.min(180, limit * 3 + 1)
+    ? Math.min(100, limit * 2 + 1)
     : hasBounds
-      ? Math.min(160, limit + 61)
+      ? Math.min(90, limit + 31)
       : limit + 1
   const requestCacheKey = getRequestCacheKey(req)
   const cached = responseCache.get(requestCacheKey)

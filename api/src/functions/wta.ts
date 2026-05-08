@@ -13,6 +13,8 @@ const textCache = new Map<string, string>()
 
 type ParkingPassType = 'free' | 'discover_pass' | 'nw_forest_pass' | 'national_park_fee' | 'unknown'
 type AccessLevel = 'sedan_ok' | 'rough' | 'high_clearance' | '4x4_only' | 'unknown'
+type Difficulty = 'Easy' | 'Moderate' | 'Hard' | 'Strenuous'
+type RouteType = 'Loop' | 'OutAndBack' | 'PointToPoint'
 
 interface TrailProjection {
   id: string
@@ -36,6 +38,10 @@ interface TrailProjection {
     confidence?: string
     lastUpdatedISO?: string
   }
+  miles?: number
+  elevationGainFt?: number
+  difficulty?: Difficulty
+  routeType?: RouteType
   alerts?: Array<{
     type: 'closure' | 'warning' | 'info'
     message: string
@@ -52,6 +58,10 @@ interface WTAEnrichment {
   parkingType?: ParkingPassType
   accessLevel?: AccessLevel
   roadNotes?: string
+  miles?: number
+  elevationGainFt?: number
+  difficulty?: Difficulty
+  routeType?: RouteType
   alert?: {
     type: 'closure' | 'warning'
     message: string
@@ -242,6 +252,51 @@ function extractParkingLabel(html: string): string | undefined {
   return label || undefined
 }
 
+function numberFromText(value?: string): number | undefined {
+  if (!value) return undefined
+  const match = value.replace(/,/g, '').match(/(\d+(?:\.\d+)?)/)
+  return match?.[1] ? Number(match[1]) : undefined
+}
+
+function extractStatValue(html: string, label: string): string | undefined {
+  const pattern = new RegExp(
+    `<div[^>]*class="[^"]*hike-stats__stat[^"]*"[^>]*>[\\s\\S]*?<dt[^>]*>[\\s\\S]*?${label}[\\s\\S]*?<\\/dt>[\\s\\S]*?<dd[^>]*>([\\s\\S]*?)<\\/dd>`,
+    'i'
+  )
+  const match = html.match(pattern)
+  return match?.[1] ? stripTags(match[1]) : undefined
+}
+
+function difficultyFromLabel(label?: string): Difficulty | undefined {
+  if (!label) return undefined
+  if (/strenuous|very hard|expert/i.test(label)) return 'Strenuous'
+  if (/hard|difficult/i.test(label)) return 'Hard'
+  if (/moderate/i.test(label)) return 'Moderate'
+  if (/easy/i.test(label)) return 'Easy'
+  return undefined
+}
+
+function routeTypeFromLength(lengthLabel?: string): RouteType | undefined {
+  if (!lengthLabel) return undefined
+  if (/loop/i.test(lengthLabel)) return 'Loop'
+  if (/one[-\s]?way|point/i.test(lengthLabel)) return 'PointToPoint'
+  if (/round\s*trip|roundtrip/i.test(lengthLabel)) return 'OutAndBack'
+  return undefined
+}
+
+function extractTrailStats(html: string): Pick<WTAEnrichment, 'miles' | 'elevationGainFt' | 'difficulty' | 'routeType'> {
+  const lengthLabel = extractStatValue(html, 'Length')
+  const gainLabel = extractStatValue(html, 'Elevation Gain')
+  const difficultyLabel = extractStatValue(html, 'Calculated Difficulty')
+
+  return {
+    miles: numberFromText(lengthLabel),
+    elevationGainFt: numberFromText(gainLabel),
+    difficulty: difficultyFromLabel(difficultyLabel),
+    routeType: routeTypeFromLength(lengthLabel),
+  }
+}
+
 function parkingTypeFromLabel(label?: string): ParkingPassType | undefined {
   if (!label) return undefined
   if (/northwest forest|nw forest/i.test(label)) return 'nw_forest_pass'
@@ -287,6 +342,7 @@ async function enrichFromWta(trail: TrailProjection): Promise<WTAEnrichment | nu
 
   const html = await fetchTextWithTimeout(match.url)
   const parkingLabel = extractParkingLabel(html)
+  const stats = extractTrailStats(html)
   const gettingThere = extractSection(html, 'Getting There')
   const beforeYouGo = extractSection(html, 'Before You Go')
   const roadNotes = firstUsefulSentence(gettingThere)
@@ -298,6 +354,7 @@ async function enrichFromWta(trail: TrailProjection): Promise<WTAEnrichment | nu
     parkingType: parkingTypeFromLabel(parkingLabel),
     accessLevel: accessFromRoadNotes(roadNotes),
     roadNotes,
+    ...stats,
     alert: buildAlert(beforeYouGo),
   }
 }
@@ -311,9 +368,11 @@ function patchForEnrichment(trail: TrailProjection, enrichment: WTAEnrichment) {
         name: enrichment.wtaName,
         url: enrichment.url,
         syncedAt: new Date().toISOString(),
+        statsSyncedAt: new Date().toISOString(),
         status: 'matched',
         parkingChecked: true,
         accessChecked: true,
+        statsChecked: true,
       },
     },
   ]
@@ -329,6 +388,22 @@ function patchForEnrichment(trail: TrailProjection, enrichment: WTAEnrichment) {
         confidence: 'high',
       },
     })
+  }
+
+  if (enrichment.miles && enrichment.miles > 0) {
+    ops.push({ op: 'set', path: '/miles', value: enrichment.miles })
+  }
+
+  if (typeof enrichment.elevationGainFt === 'number' && enrichment.elevationGainFt >= 0) {
+    ops.push({ op: 'set', path: '/elevationGainFt', value: enrichment.elevationGainFt })
+  }
+
+  if (enrichment.difficulty) {
+    ops.push({ op: 'set', path: '/difficulty', value: enrichment.difficulty })
+  }
+
+  if (enrichment.routeType) {
+    ops.push({ op: 'set', path: '/routeType', value: enrichment.routeType })
   }
 
   if (enrichment.accessLevel || enrichment.roadNotes) {
@@ -376,9 +451,11 @@ function patchForWtaMiss() {
       path: '/wta',
       value: {
         syncedAt: new Date().toISOString(),
+        statsSyncedAt: new Date().toISOString(),
         status: 'not_found',
         parkingChecked: true,
         accessChecked: true,
+        statsChecked: true,
       },
     },
   ]
@@ -406,13 +483,15 @@ async function wtaSyncHandler(req: HttpRequest, context: InvocationContext): Pro
         : [
             'WHERE IS_DEFINED(t.name) AND (',
             'NOT IS_DEFINED(t.wta.syncedAt)',
-            "OR NOT IS_DEFINED(t.parking.type)",
-            "OR t.parking.type = 'unknown'",
+            'OR NOT IS_DEFINED(t.wta.statsSyncedAt)',
+            "OR ((NOT IS_DEFINED(t.wta.parkingChecked) OR t.wta.parkingChecked = false) AND (NOT IS_DEFINED(t.parking.type) OR t.parking.type = 'unknown'))",
+            'OR NOT IS_DEFINED(t.miles)',
+            'OR NOT IS_DEFINED(t.difficulty)',
             ')',
           ].join(' ')
     const querySpec = {
       query: [
-        `SELECT TOP ${limit} t.id, t.pk, t.name, t.region, t.parking, t.access, t.roadCondition, t.alerts`,
+        `SELECT TOP ${limit} t.id, t.pk, t.name, t.region, t.parking, t.access, t.roadCondition, t.miles, t.elevationGainFt, t.difficulty, t.routeType, t.alerts`,
         'FROM t',
         where,
       ].join(' '),

@@ -13,7 +13,7 @@ const CHIPS: Chip[] = [
   { id: 'go', icon: '🌤️', label: 'Good today', filterKey: 'conditionOverall', filterValue: 'go', activeValue: 'go' },
   { id: 'discover', icon: '🎟️', label: 'Discover Pass', filterKey: 'parkingType', filterValue: 'discover_pass', activeValue: 'discover_pass' },
   { id: 'nw-forest', icon: '🌲', label: 'NW Forest Pass', filterKey: 'parkingType', filterValue: 'nw_forest_pass', activeValue: 'nw_forest_pass' },
-  { id: 'free', icon: '🅿️', label: 'Free parking', filterKey: 'parkingType', filterValue: 'free', activeValue: 'free' },
+  { id: 'free', icon: '🅿️', label: 'No permit', filterKey: 'parkingType', filterValue: 'free', activeValue: 'free' },
 ]
 
 export function QuickFilterChips() {

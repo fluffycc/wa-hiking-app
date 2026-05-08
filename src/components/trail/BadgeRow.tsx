@@ -13,11 +13,11 @@ const BADGE_CLASS = {
 }
 
 const PARKING_LABEL: Record<string, string> = {
-  free: 'Free parking',
+  free: 'No permit',
   discover_pass: 'Discover Pass',
   nw_forest_pass: 'NW Forest Pass',
   national_park_fee: 'Park fee',
-  unknown: 'Parking unknown',
+  unknown: 'Permit unknown',
 }
 
 const PARKING_CLASS: Record<string, string> = {
@@ -89,7 +89,7 @@ export function BadgeRow({ trail, size = 'md' }: Props) {
   const px = size === 'sm' ? 'px-2 py-0.5 text-xs' : 'px-2.5 py-1 text-xs'
   const access = getAccessBadge(trail)
   const parkingClass = PARKING_CLASS[trail.parking.type] ?? BADGE_CLASS.gray
-  const parkingLabel = PARKING_LABEL[trail.parking.type] ?? 'Parking unknown'
+  const parkingLabel = PARKING_LABEL[trail.parking.type] ?? 'Permit unknown'
 
   const badge = (label: string, cls: string) => (
     <span className={`inline-flex items-center rounded-full border font-body font-medium ${px} ${cls}`}>

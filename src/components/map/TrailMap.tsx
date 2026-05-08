@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { MapContainer, TileLayer, CircleMarker, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
+import type { LatLngBoundsExpression } from 'leaflet'
 import type { Trail } from '../../domain/types'
 import { useUiStore } from '../../state/useUiStore'
 import { useTrailStore } from '../../state/useTrailStore'
+
+const WASHINGTON_BOUNDS: LatLngBoundsExpression = [
+  [45.35, -125.1],
+  [49.2, -116.75],
+]
 
 const PIN_COLORS = {
   go: '#22c55e',
@@ -110,6 +116,10 @@ export function TrailMap() {
       center={[47.5, -120.5]}
       zoom={7}
       zoomControl={false}
+      minZoom={6}
+      maxZoom={14}
+      maxBounds={WASHINGTON_BOUNDS}
+      maxBoundsViscosity={0.85}
       preferCanvas
       fadeAnimation={false}
       markerZoomAnimation={false}

@@ -1,10 +1,10 @@
+import type { ReactNode } from 'react'
 import type { Trail, RoadCondition } from '../../domain/types'
-import { BadgeRow } from './BadgeRow'
 import { useSavedStore } from '../../state/useSavedStore'
 
 interface Props { trail: Trail }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="py-4 border-b border-gray-100 last:border-0">
       <h4 className="font-display font-semibold text-trail-dark text-sm mb-2">{title}</h4>
@@ -33,6 +33,34 @@ const DNR_LEVEL_LABEL: Record<number, string> = {
   3: 'Passenger car (gravel)',
   4: 'Passenger car (paved)',
   5: 'Paved highway',
+}
+
+const PARKING_LABEL: Record<string, string> = {
+  free: 'No permit',
+  discover_pass: 'Discover Pass',
+  nw_forest_pass: 'NW Forest Pass',
+  national_park_fee: 'Park fee',
+  unknown: 'Unknown',
+}
+
+type Tone = 'green' | 'amber' | 'red' | 'gray' | 'blue' | 'violet' | 'teal'
+
+const GLANCE_TONE_CLASS: Record<Tone, string> = {
+  green: 'bg-green-50 border-green-100 text-green-900',
+  amber: 'bg-amber-50 border-amber-100 text-amber-900',
+  red: 'bg-red-50 border-red-100 text-red-900',
+  gray: 'bg-gray-50 border-gray-100 text-gray-700',
+  blue: 'bg-blue-50 border-blue-100 text-blue-900',
+  violet: 'bg-violet-50 border-violet-100 text-violet-900',
+  teal: 'bg-teal-50 border-teal-100 text-teal-900',
+}
+
+const PARKING_TONE: Record<string, Tone> = {
+  free: 'green',
+  discover_pass: 'violet',
+  nw_forest_pass: 'teal',
+  national_park_fee: 'blue',
+  unknown: 'gray',
 }
 
 function alertSuggestsClosure(message: string): boolean {
@@ -85,6 +113,61 @@ function getAccessStatus(trail: Trail, activeAlerts: NonNullable<Trail['alerts']
   }
 }
 
+function getWeatherGlance(trail: Trail): { value: string; tone: Tone } {
+  if (trail.conditions.weatherHint) return { value: trail.conditions.weatherHint, tone: 'amber' }
+  if (trail.conditions.snow === 'significant') return { value: 'Snow likely', tone: 'amber' }
+  if (trail.conditions.snow === 'patchy') return { value: 'Patchy snow', tone: 'amber' }
+  if (trail.conditions.overall === 'go') return { value: 'Looks good', tone: 'green' }
+  if (trail.conditions.overall === 'avoid') return { value: 'Avoid today', tone: 'red' }
+  return { value: 'Check forecast', tone: 'gray' }
+}
+
+function getRoadGlance(
+  trail: Trail,
+  accessStatus: ReturnType<typeof getAccessStatus>,
+  hasClosureRisk: boolean
+): { value: string; tone: Tone; detail?: string } {
+  if (accessStatus.label === 'Not accessible') {
+    return { value: 'Closed', tone: 'red', detail: 'Trail-specific closure' }
+  }
+
+  if (trail.roadCondition?.condition && trail.roadCondition.condition !== 'unknown') {
+    const value = CONDITION_LABEL[trail.roadCondition.condition] ?? trail.roadCondition.condition.replace('_', ' ')
+    const caution = trail.roadCondition.condition === 'rough' || trail.roadCondition.condition === 'very_rough'
+    return {
+      value,
+      tone: caution || hasClosureRisk ? 'amber' : 'green',
+      detail: trail.roadCondition.surface !== 'unknown'
+        ? `${SURFACE_LABEL[trail.roadCondition.surface] ?? trail.roadCondition.surface} road`
+        : undefined,
+    }
+  }
+
+  if (trail.access.level === 'sedan_ok') return { value: 'Sedan OK', tone: 'green' }
+  if (trail.access.level === 'unknown') return { value: 'Check access', tone: 'amber' }
+  return { value: accessStatus.label, tone: 'amber' }
+}
+
+function GlanceTile({
+  label,
+  value,
+  tone,
+  detail,
+}: {
+  label: string
+  value: string
+  tone: Tone
+  detail?: string
+}) {
+  return (
+    <div className={`min-w-0 rounded-xl border px-2 py-2 text-left ${GLANCE_TONE_CLASS[tone]}`}>
+      <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">{label}</p>
+      <p className="mt-1 text-[11px] font-bold leading-tight break-words">{value}</p>
+      {detail && <p className="mt-1 text-[10px] leading-tight opacity-70 break-words">{detail}</p>}
+    </div>
+  )
+}
+
 function RoadConditionBlock({
   road,
   showConfidenceWarning,
@@ -121,6 +204,10 @@ export function TrailDetails({ trail }: Props) {
   const activeAlerts = trail.alerts?.filter(a => !a.expiresISO || new Date(a.expiresISO) > new Date()) ?? []
   const showAccessConfidenceWarning = hasSnowOrClosureRisk(trail, activeAlerts)
   const accessStatus = getAccessStatus(trail, activeAlerts)
+  const weatherGlance = getWeatherGlance(trail)
+  const roadGlance = getRoadGlance(trail, accessStatus, showAccessConfidenceWarning)
+  const parkingLabel = PARKING_LABEL[trail.parking.type] ?? 'Unknown'
+  const parkingTone = PARKING_TONE[trail.parking.type] ?? 'gray'
 
   return (
     <div className="font-body">
@@ -160,12 +247,11 @@ export function TrailDetails({ trail }: Props) {
       )}
 
       <Section title="Today at a Glance">
-        <BadgeRow trail={trail} />
-        {trail.conditions.weatherHint && (
-          <p className="mt-2 text-sm text-trail-stone bg-amber-50 rounded-lg px-3 py-2">
-            {trail.conditions.weatherHint}
-          </p>
-        )}
+        <div className="grid grid-cols-3 gap-2">
+          <GlanceTile label="Weather" value={weatherGlance.value} tone={weatherGlance.tone} />
+          <GlanceTile label="Road" value={roadGlance.value} tone={roadGlance.tone} detail={roadGlance.detail} />
+          <GlanceTile label="Permit" value={parkingLabel} tone={parkingTone} />
+        </div>
       </Section>
 
       <Section title="Conditions">
@@ -225,8 +311,8 @@ export function TrailDetails({ trail }: Props) {
 
       <Section title="Parking & Passes">
         <div className="bg-amber-50 border border-amber-100 rounded-xl p-3">
-          <p className="text-sm font-semibold text-trail-dark capitalize">
-            {trail.parking.type.replace(/_/g, ' ')}
+          <p className="text-sm font-semibold text-trail-dark">
+            {parkingLabel}
           </p>
           {trail.parking.notes && (
             <p className="text-sm text-trail-stone mt-1">{trail.parking.notes}</p>

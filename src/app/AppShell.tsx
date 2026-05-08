@@ -36,11 +36,11 @@ export function AppShell() {
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-0.5 transition-colors
+                className={`flex-1 flex flex-col items-center justify-center py-1.5 gap-0 transition-colors
                   ${active ? 'text-trail-green' : 'text-trail-stone hover:text-trail-dark'}`}
               >
-                <span className="text-xl leading-none">{tab.icon}</span>
-                <span className={`text-[10px] font-body font-medium ${active ? 'text-trail-green' : ''}`}>
+                <span className="text-lg leading-none">{tab.icon}</span>
+                <span className={`text-[9px] font-body font-medium ${active ? 'text-trail-green' : ''}`}>
                   {tab.label}
                 </span>
               </button>
