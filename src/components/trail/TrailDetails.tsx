@@ -208,6 +208,7 @@ export function TrailDetails({ trail }: Props) {
   const roadGlance = getRoadGlance(trail, accessStatus, showAccessConfidenceWarning)
   const parkingLabel = PARKING_LABEL[trail.parking.type] ?? 'Unknown'
   const parkingTone = PARKING_TONE[trail.parking.type] ?? 'gray'
+  const statsPending = trail.statsConfidence === 'low'
 
   return (
     <div className="font-body">
@@ -321,20 +322,33 @@ export function TrailDetails({ trail }: Props) {
       </Section>
 
       <Section title="Basics">
+        {statsPending && (
+          <div className="mb-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            WTA stats not matched yet. We are keeping this trail visible, but hiding the old fallback distance and difficulty.
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-2 text-sm">
-          {[
-            { label: 'Distance',  value: `${trail.miles} miles` },
-            { label: 'Elevation', value: `${trail.elevationGainFt.toLocaleString()} ft gain` },
-            { label: 'Difficulty',value: trail.difficulty },
-            { label: 'Route',     value: trail.routeType },
-            { label: 'Land Owner',value: trail.landOwner },
-            ...(trail.trailheadElevationFt ? [{ label: 'TH Elevation', value: `${trail.trailheadElevationFt.toLocaleString()} ft` }] : []),
-          ].map(({ label, value }) => (
-            <div key={label} className="bg-gray-50 rounded-lg p-2.5">
-              <p className="text-xs text-trail-stone">{label}</p>
-              <p className="font-medium text-trail-dark mt-0.5">{value}</p>
-            </div>
-          ))}
+          {(statsPending
+            ? [
+                { label: 'Distance', value: 'Pending WTA match' },
+                { label: 'Elevation', value: 'Pending WTA match' },
+                { label: 'Difficulty', value: 'Pending WTA match' },
+                { label: 'Route', value: trail.routeType },
+                { label: 'Land Owner', value: trail.landOwner },
+              ]
+            : [
+                { label: 'Distance',  value: `${trail.miles} miles` },
+                { label: 'Elevation', value: `${trail.elevationGainFt.toLocaleString()} ft gain` },
+                { label: 'Difficulty',value: trail.difficulty },
+                { label: 'Route',     value: trail.routeType },
+                { label: 'Land Owner',value: trail.landOwner },
+                ...(trail.trailheadElevationFt ? [{ label: 'TH Elevation', value: `${trail.trailheadElevationFt.toLocaleString()} ft` }] : []),
+              ]).map(({ label, value }) => (
+                <div key={label} className="bg-gray-50 rounded-lg p-2.5">
+                  <p className="text-xs text-trail-stone">{label}</p>
+                  <p className="font-medium text-trail-dark mt-0.5">{value}</p>
+                </div>
+              ))}
         </div>
         {trail.description && (
           <p className="mt-3 text-sm text-trail-stone leading-relaxed">{trail.description}</p>

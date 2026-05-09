@@ -65,6 +65,17 @@ function hasLowConfidenceDefaultStats(trail: TrailDoc): boolean {
   )
 }
 
+function markStatsConfidence(trail: TrailDoc): TrailDoc {
+  if (trail.statsConfidence) return trail
+  if (hasLowConfidenceDefaultStats(trail)) {
+    return { ...trail, statsConfidence: 'low' }
+  }
+  if (trail.wta?.statsAvailable === true || trail.source === 'wta') {
+    return { ...trail, statsConfidence: 'high' }
+  }
+  return trail
+}
+
 function searchScore(query: string | undefined, trail: TrailDoc): number {
   if (!query) return 0
 
@@ -220,6 +231,7 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
       maxMiles: p['maxMiles'] ? parseFloat(p['maxMiles']) : undefined,
     })
     const correctedResources = applyTrailCorrections([...popularTrails, ...dataRes.resources])
+      .map(markStatsConfidence)
     const trails = uniqueTrails(correctedResources, p['q'], limit)
     const trailsWithConditions = await overlayRegionConditions(container, trails)
     const hasMore = dataRes.resources.length > trails.length

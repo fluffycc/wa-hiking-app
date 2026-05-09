@@ -56,6 +56,7 @@ export interface Trail {
   roadCondition?: RoadCondition
   alerts?: TrailAlert[]
   source?: DataSource
+  statsConfidence?: Confidence
   osmId?: string
   photos?: string[]
   description?: string

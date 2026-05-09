@@ -24,11 +24,12 @@ function wtaTrail(values: TrailDoc): TrailDoc {
     conditions: { overall: 'unknown', snow: 'none', mud: 'dry', bugs: 'none', notes: [] },
     alerts: [],
     source: 'wta',
+    statsConfidence: 'high',
     syncedAt: NOW,
     ...values,
     pk: values.region,
     wta: {
-      name: values.name,
+      name: values.wtaName ?? values.name,
       url: values.wtaUrl,
       syncedAt: NOW,
       statsSyncedAt: NOW,
@@ -42,6 +43,7 @@ function wtaTrail(values: TrailDoc): TrailDoc {
 }
 
 export const POPULAR_WTA_TRAILS: TrailDoc[] = [
+  wtaTrail({ id: 'wta-rainbow-town-trail', name: 'Rainbow Town Trail', wtaName: 'Red Town Meadow & Trails', aliases: ['red town meadow', 'red town meadow trails', 'red town trail', 'rainbow town', 'rainbow town trail'], region: 'Snoqualmie Region', lat: 47.5348333333, lng: -122.1288, miles: 1.5, elevationGainFt: 150, trailheadElevationFt: 650, difficulty: 'Easy', parking: { type: 'free', notes: 'WTA: None', confidence: 'high' }, wtaUrl: 'https://www.wta.org/go-hiking/hikes/redtown-meadow' }),
   wtaTrail({ id: 'wta-rattlesnake-ledge', name: 'Rattlesnake Ledge', region: 'Snoqualmie Region', lat: 47.4347127863, lng: -121.768745691, miles: 4.0, elevationGainFt: 1160, trailheadElevationFt: 918, difficulty: 'Moderate', parking: { type: 'free', notes: 'WTA: None', confidence: 'high' }, wtaUrl: 'https://www.wta.org/go-hiking/hikes/rattlesnake-ledge' }),
   wtaTrail({ id: 'wta-rattlesnake-trail', name: 'Rattlesnake Trail', region: 'Eastern Washington', lat: 46.2043616519, lng: -117.706650496, miles: 12.0, elevationGainFt: 2700, trailheadElevationFt: 3000, difficulty: 'Hard', parking: { type: 'free', notes: 'WTA: None', confidence: 'high' }, wtaUrl: 'https://www.wta.org/go-hiking/hikes/rattlesnake-trail' }),
   wtaTrail({ id: 'wta-mount-si', name: 'Mount Si', region: 'Snoqualmie Region', lat: 47.4879799075, lng: -121.723121166, miles: 8.0, elevationGainFt: 3150, trailheadElevationFt: 750, difficulty: 'Hard', parking: { type: 'discover_pass', notes: 'WTA: Discover Pass', confidence: 'high' }, wtaUrl: 'https://www.wta.org/go-hiking/hikes/mount-si' }),
@@ -64,8 +66,10 @@ export const POPULAR_WTA_TRAILS: TrailDoc[] = [
 function matchesQuery(trail: TrailDoc, query?: string): boolean {
   if (!query?.trim()) return true
   const q = normalizeCorrectionName(query)
-  const name = normalizeCorrectionName(trail.name)
-  return name.includes(q) || q.includes(name)
+  const names = [trail.name, trail.wtaName, ...(trail.aliases ?? [])]
+    .map(normalizeCorrectionName)
+    .filter(Boolean)
+  return names.some(name => name.includes(q) || q.includes(name))
 }
 
 function matchesBounds(trail: TrailDoc, filter: PopularTrailFilter): boolean {

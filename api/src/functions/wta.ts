@@ -17,6 +17,7 @@ const TRIP_REPORT_FETCH_TIMEOUT_MS = 2_500
 const USER_AGENT = 'WAHikingApp/1.0 (contact: you@example.com)'
 const textCache = new Map<string, string>()
 const DEFAULT_WTA_SEEDS = [
+  { name: 'Rainbow Town Trail', url: 'https://www.wta.org/go-hiking/hikes/redtown-meadow' },
   { name: 'Lake 22', url: 'https://www.wta.org/go-hiking/hikes/lake-22-lake-twenty-two' },
   { name: 'Heather Lake', url: 'https://www.wta.org/go-hiking/hikes/heather-lake-1' },
   { name: 'Rattlesnake Ledge', url: 'https://www.wta.org/go-hiking/hikes/rattlesnake-ledge' },
