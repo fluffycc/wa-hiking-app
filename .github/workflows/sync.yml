@@ -2,7 +2,7 @@ name: Sync Trail Data
 
 on:
   schedule:
-    - cron: '0 3,15 * * *'
+    - cron: '0 3,8,13,18,23 * * *'
   workflow_dispatch:
     inputs:
       sync_type:
@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       (
-        (github.event_name == 'schedule' && github.event.schedule == '0 3,15 * * *') ||
+        (github.event_name == 'schedule' && github.event.schedule == '0 3,8,13,18,23 * * *') ||
         (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'wadnr') ||
         (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'all')
       )
@@ -59,7 +59,7 @@ jobs:
     if: |
       always() &&
       (
-        (github.event_name == 'schedule' && github.event.schedule == '0 3,15 * * *' && needs.sync-wadnr.result == 'success') ||
+        (github.event_name == 'schedule' && github.event.schedule == '0 3,8,13,18,23 * * *' && needs.sync-wadnr.result == 'success') ||
         (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'waparks') ||
         (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'all' && needs.sync-wadnr.result == 'success')
       )
@@ -82,7 +82,7 @@ jobs:
     if: |
       always() &&
       (
-        (github.event_name == 'schedule' && github.event.schedule == '0 3,15 * * *' && needs.sync-waparks.result == 'success') ||
+        (github.event_name == 'schedule' && github.event.schedule == '0 3,8,13,18,23 * * *' && needs.sync-waparks.result == 'success') ||
         (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'wta') ||
         (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'all' && needs.sync-waparks.result == 'success')
       )
@@ -107,7 +107,7 @@ jobs:
     if: |
       always() &&
       (
-        (github.event_name == 'schedule' && github.event.schedule == '0 3,15 * * *' && needs.sync-wta.result == 'success') ||
+        (github.event_name == 'schedule' && github.event.schedule == '0 3,8,13,18,23 * * *' && needs.sync-wta.result == 'success') ||
         (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'conditions') ||
         (github.event_name == 'workflow_dispatch' && inputs.sync_type == 'all' && needs.sync-wta.result == 'success')
       )

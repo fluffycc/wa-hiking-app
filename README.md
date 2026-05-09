@@ -106,7 +106,7 @@ Available manual modes:
 - `conditions`: NOAA and WSDOT warning refresh.
 - `all`: normal pipeline: WA DNR, WA State Parks, WTA, then conditions.
 
-The scheduled workflow runs the normal pipeline twice per day at `03:00` and `15:00` UTC, which is roughly evening and morning Pacific time depending on daylight saving time.
+The scheduled workflow runs the normal pipeline five times per day at `03:00`, `08:00`, `13:00`, `18:00`, and `23:00` UTC, which is roughly every five hours.
 
 OSM is intentionally not part of `all` or the scheduled workflow anymore. Overpass is slow and unreliable inside Azure Static Web Apps, and OSM trail records often have weak distance/difficulty/parking data. Existing OSM records can remain as fallback coverage, but WTA/DNR/Parks should be treated as the useful data path.
 
