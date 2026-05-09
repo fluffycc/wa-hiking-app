@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { getTrailsContainer } from '../shared/cosmosClient'
 import { overlayRegionConditions } from '../shared/regionConditions'
 import { applyTrailCorrections, normalizeCorrectionName } from '../shared/trailCorrections'
+import { getPopularTrailCandidates } from '../shared/popularTrails'
 
 const CACHE_CONTROL = 'public, max-age=120, s-maxage=600, stale-while-revalidate=1800'
 const RESPONSE_CACHE_TTL_MS = 10 * 60 * 1000
@@ -42,10 +43,12 @@ function trailKey(trail: TrailDoc): string {
 
 function trailQuality(trail: TrailDoc): number {
   let score = 0
+  if (hasLowConfidenceDefaultStats(trail)) score -= 8
   if (trail.parking?.type && trail.parking.type !== 'unknown') score += 4
   if (trail.access?.level && trail.access.level !== 'unknown') score += 2
   if (trail.roadCondition?.condition && trail.roadCondition.condition !== 'unknown') score += 1
   if (trail.wta?.status === 'matched') score += 4
+  if (trail.wta?.statsAvailable === true) score += 5
   if (trail.source === 'wta') score += 6
   if (trail.source === 'wadnr' || trail.source === 'wa_parks') score += 2
   if (trail.source === 'osm') score -= 1
@@ -151,10 +154,6 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
   const conditions: string[] = ["(NOT IS_DEFINED(t.docType) OR t.docType = 'trail')"]
   const params: { name: string; value: unknown }[] = []
 
-  if (p['includeLowConfidence'] !== 'true') {
-    conditions.push("NOT ((t.source = 'osm' OR t.source = 'wta') AND t.miles = 3 AND (NOT IS_DEFINED(t.elevationGainFt) OR t.elevationGainFt = 0) AND (NOT IS_DEFINED(t.wta.statsAvailable) OR t.wta.statsAvailable != true))")
-  }
-
   if (p['region']) {
     const regions = p['region'].split(',').map((r: string, i: number) => {
       params.push({ name: `@region${i}`, value: r.trim() })
@@ -209,8 +208,18 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
       { query, parameters: params },
       { enableCrossPartitionQuery: true }
     ).fetchAll()
-    const correctedResources = applyTrailCorrections(dataRes.resources)
-      .filter(trail => p['includeLowConfidence'] === 'true' || !hasLowConfidenceDefaultStats(trail))
+    const popularTrails = getPopularTrailCandidates({
+      query: p['q'],
+      north: hasBounds ? parseFloat(p['north']) : undefined,
+      south: hasBounds ? parseFloat(p['south']) : undefined,
+      east: hasBounds ? parseFloat(p['east']) : undefined,
+      west: hasBounds ? parseFloat(p['west']) : undefined,
+      region: p['region'],
+      parking: p['parking'],
+      difficulty: p['difficulty'],
+      maxMiles: p['maxMiles'] ? parseFloat(p['maxMiles']) : undefined,
+    })
+    const correctedResources = applyTrailCorrections([...popularTrails, ...dataRes.resources])
     const trails = uniqueTrails(correctedResources, p['q'], limit)
     const trailsWithConditions = await overlayRegionConditions(container, trails)
     const hasMore = dataRes.resources.length > trails.length

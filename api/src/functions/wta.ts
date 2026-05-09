@@ -19,6 +19,10 @@ const textCache = new Map<string, string>()
 const DEFAULT_WTA_SEEDS = [
   { name: 'Lake 22', url: 'https://www.wta.org/go-hiking/hikes/lake-22-lake-twenty-two' },
   { name: 'Heather Lake', url: 'https://www.wta.org/go-hiking/hikes/heather-lake-1' },
+  { name: 'Rattlesnake Ledge', url: 'https://www.wta.org/go-hiking/hikes/rattlesnake-ledge' },
+  { name: 'Mount Si', url: 'https://www.wta.org/go-hiking/hikes/mount-si' },
+  { name: 'Snow Lake', url: 'https://www.wta.org/go-hiking/hikes/snow-lake' },
+  { name: 'Mailbox Peak', url: 'https://www.wta.org/go-hiking/hikes/mailbox-peak' },
 ]
 
 type ParkingPassType = 'free' | 'discover_pass' | 'nw_forest_pass' | 'national_park_fee' | 'unknown'

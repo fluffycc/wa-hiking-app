@@ -10,6 +10,7 @@ const WASHINGTON_BOUNDS: LatLngBoundsExpression = [
   [45.35, -125.1],
   [49.2, -116.75],
 ]
+const VIEWPORT_GRID = 20
 
 const WASHINGTON_OUTLINE: LatLngExpression[] = [
   [45.55, -124.02],
@@ -99,10 +100,10 @@ function ViewportTrailLoader() {
     timerRef.current = window.setTimeout(() => {
       const bounds = map.getBounds()
       const nextBounds = {
-        north: Number(bounds.getNorth().toFixed(2)),
-        south: Number(bounds.getSouth().toFixed(2)),
-        east:  Number(bounds.getEast().toFixed(2)),
-        west:  Number(bounds.getWest().toFixed(2)),
+        north: Math.ceil(bounds.getNorth() * VIEWPORT_GRID) / VIEWPORT_GRID,
+        south: Math.floor(bounds.getSouth() * VIEWPORT_GRID) / VIEWPORT_GRID,
+        east:  Math.ceil(bounds.getEast() * VIEWPORT_GRID) / VIEWPORT_GRID,
+        west:  Math.floor(bounds.getWest() * VIEWPORT_GRID) / VIEWPORT_GRID,
       }
       const viewportKey = [
         map.getZoom(),
