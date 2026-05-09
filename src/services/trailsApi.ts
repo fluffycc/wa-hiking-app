@@ -20,8 +20,8 @@ const RESPONSE_CACHE_TTL_MS = 20 * 60 * 1000
 const PERSISTED_RESPONSE_CACHE_TTL_MS = 60 * 60 * 1000
 const RESPONSE_CACHE_MAX_ENTRIES = 150
 const PERSISTED_RESPONSE_CACHE_MAX_ENTRIES = 60
-const API_DATA_VERSION = '2026-05-09-wta-alias-stats'
-const STORAGE_PREFIX = 'wa-hiking:trails:v7:'
+const API_DATA_VERSION = '2026-05-09-live-wta-stats'
+const STORAGE_PREFIX = 'wa-hiking:trails:v8:'
 const STORAGE_INDEX_KEY = `${STORAGE_PREFIX}index`
 const responseCache = new Map<string, { cachedAt: number; data: TrailsApiResponse }>()
 

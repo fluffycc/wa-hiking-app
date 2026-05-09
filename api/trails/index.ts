@@ -3,6 +3,7 @@ import { getTrailsContainer } from '../shared/cosmosClient'
 import { overlayRegionConditions } from '../shared/regionConditions'
 import { applyTrailCorrections, normalizeCorrectionName } from '../shared/trailCorrections'
 import { getPopularTrailCandidates } from '../shared/popularTrails'
+import { enrichDefaultStatsFromWta, hasDefaultFallbackStats } from '../shared/wtaLookup'
 
 const CACHE_CONTROL = 'public, max-age=120, s-maxage=600, stale-while-revalidate=1800'
 const RESPONSE_CACHE_TTL_MS = 10 * 60 * 1000
@@ -56,13 +57,7 @@ function trailQuality(trail: TrailDoc): number {
 }
 
 function hasLowConfidenceDefaultStats(trail: TrailDoc): boolean {
-  const source = String(trail.source ?? '').toLowerCase()
-  return (
-    Number(trail.miles) === 3 &&
-    Number(trail.elevationGainFt ?? 0) === 0 &&
-    trail.wta?.statsAvailable !== true &&
-    (source === 'osm' || source === 'wta')
-  )
+  return hasDefaultFallbackStats(trail)
 }
 
 function markStatsConfidence(trail: TrailDoc): TrailDoc {
@@ -231,8 +226,12 @@ async function trailsHandler(req: HttpRequest, context: InvocationContext): Prom
       maxMiles: p['maxMiles'] ? parseFloat(p['maxMiles']) : undefined,
     })
     const correctedResources = applyTrailCorrections([...popularTrails, ...dataRes.resources])
+    const enrichedResources = p['q']
+      ? await enrichDefaultStatsFromWta(correctedResources, 6)
+      : correctedResources
+    const resourcesWithConfidence = enrichedResources
       .map(markStatsConfidence)
-    const trails = uniqueTrails(correctedResources, p['q'], limit)
+    const trails = uniqueTrails(resourcesWithConfidence, p['q'], limit)
     const trailsWithConditions = await overlayRegionConditions(container, trails)
     const hasMore = dataRes.resources.length > trails.length
     const body = { trails: trailsWithConditions, total: offset + trails.length, page, limit, hasMore }

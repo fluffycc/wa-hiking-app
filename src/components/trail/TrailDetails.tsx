@@ -322,17 +322,9 @@ export function TrailDetails({ trail }: Props) {
       </Section>
 
       <Section title="Basics">
-        {statsPending && (
-          <div className="mb-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-            WTA stats not matched yet. We are keeping this trail visible, but hiding the old fallback distance and difficulty.
-          </div>
-        )}
         <div className="grid grid-cols-2 gap-2 text-sm">
           {(statsPending
             ? [
-                { label: 'Distance', value: 'Pending WTA match' },
-                { label: 'Elevation', value: 'Pending WTA match' },
-                { label: 'Difficulty', value: 'Pending WTA match' },
                 { label: 'Route', value: trail.routeType },
                 { label: 'Land Owner', value: trail.landOwner },
               ]

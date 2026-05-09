@@ -43,19 +43,15 @@ export function TrailCard({ trail, onClick, selected = false }: Props) {
 
         <BadgeRow trail={trail} size="sm" />
 
-        <div className="flex items-center gap-3 mt-3 text-xs text-trail-stone font-body">
-          {statsPending ? (
-            <span className="font-medium text-amber-700">Stats pending WTA match</span>
-          ) : (
-            <>
-              <span>{trail.miles} mi</span>
-              <span>{trail.elevationGainFt.toLocaleString()} ft gain</span>
-              <span className={`font-medium ${difficultyClass(trail.difficulty)}`}>{trail.difficulty}</span>
-              <span className="text-gray-300">|</span>
-              <span>{trail.routeType}</span>
-            </>
-          )}
-        </div>
+        {!statsPending && (
+          <div className="flex items-center gap-3 mt-3 text-xs text-trail-stone font-body">
+            <span>{trail.miles} mi</span>
+            <span>{trail.elevationGainFt.toLocaleString()} ft gain</span>
+            <span className={`font-medium ${difficultyClass(trail.difficulty)}`}>{trail.difficulty}</span>
+            <span className="text-gray-300">|</span>
+            <span>{trail.routeType}</span>
+          </div>
+        )}
       </div>
     </div>
   )

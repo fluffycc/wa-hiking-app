@@ -2,6 +2,14 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { getTrailsContainer } from '../shared/cosmosClient'
 import { overlayRegionConditions } from '../shared/regionConditions'
 import { applyTrailCorrection } from '../shared/trailCorrections'
+import { enrichTrailStatsFromWta, hasDefaultFallbackStats } from '../shared/wtaLookup'
+
+function markStatsConfidence(trail: Record<string, any>): Record<string, any> {
+  if (trail.statsConfidence) return trail
+  if (hasDefaultFallbackStats(trail)) return { ...trail, statsConfidence: 'low' }
+  if (trail.wta?.statsAvailable === true || trail.source === 'wta') return { ...trail, statsConfidence: 'high' }
+  return trail
+}
 
 async function trailHandler(req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const id = new URL(req.url).searchParams.get('id')
@@ -17,7 +25,9 @@ async function trailHandler(req: HttpRequest, context: InvocationContext): Promi
       .fetchAll()
 
     if (!resources.length) return { status: 404, jsonBody: { error: 'Trail not found' } }
-    const [trail] = await overlayRegionConditions(container, [applyTrailCorrection(resources[0])])
+    const corrected = applyTrailCorrection(resources[0])
+    const enriched = await enrichTrailStatsFromWta(corrected)
+    const [trail] = await overlayRegionConditions(container, [markStatsConfidence(enriched)])
     return { status: 200, jsonBody: trail }
   } catch (err) {
     context.error('GET /api/trail error', err)
