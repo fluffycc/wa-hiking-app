@@ -198,6 +198,7 @@ async function waparksSyncHandler(req: HttpRequest, context: InvocationContext):
     let upserted = 0
     const container = getTrailsContainer()
     let source = 'socrata'
+    let warning: string | undefined
     let records: WAParkRecord[]
 
     try {
@@ -205,10 +206,20 @@ async function waparksSyncHandler(req: HttpRequest, context: InvocationContext):
     } catch (err) {
       context.warn('WA State Parks Socrata source unavailable; falling back to WA.gov pages', err)
       source = 'wa.gov'
-      records = await fetchWAGovParkRecords(context)
+      try {
+        records = await fetchWAGovParkRecords(context)
+      } catch (fallbackErr) {
+        warning = `WA State Parks sources unavailable: Socrata=${String(err)}; WA.gov=${String(fallbackErr)}`
+        context.warn(warning)
+        records = []
+      }
     }
 
     context.log(`WA State Parks: ${records.length} trail parks from ${source}`)
+
+    if (!records.length) {
+      return { status: 200, jsonBody: { ok: true, upserted, source, warning: warning ?? 'No WA State Parks trail records found' } }
+    }
 
     await runInBatches(records, UPSERT_BATCH_SIZE, async (park) => {
       const lat = parseFloat(park.latitude ?? '0')
@@ -254,7 +265,7 @@ async function waparksSyncHandler(req: HttpRequest, context: InvocationContext):
       upserted++
     })
 
-    return { status: 200, jsonBody: { ok: true, upserted, source } }
+    return { status: 200, jsonBody: { ok: true, upserted, source, warning } }
   } catch (err) {
     context.error('WA Parks sync failed:', err)
     return { status: 500, jsonBody: { ok: false, error: String(err) } }
