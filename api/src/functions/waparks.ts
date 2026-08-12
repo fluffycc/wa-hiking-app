@@ -3,7 +3,7 @@ import { getTrailsContainer } from '../../shared/cosmosClient'
 import { regionFromLatLng, cleanName } from '../../shared/trailMapper'
 
 const SOCRATA_PARKS_URL = 'https://data.wa.gov/resource/qeqb-pjy8.json'
-const WA_GOV_PARKS_URL = 'https://wa.gov/recreation/parks'
+const WA_GOV_PARKS_URL = 'https://parks.wa.gov/find-parks'
 const PAGE_SIZE = 1000
 const FETCH_TIMEOUT_MS = 60_000
 const UPSERT_BATCH_SIZE = 25
@@ -105,8 +105,8 @@ function decodeHtml(value: string): string {
 
 function extractParkLinks(html: string): string[] {
   const links = new Set<string>()
-  for (const match of html.matchAll(/href="https:\/\/wa\.gov(\/recreation\/parks\/[^"#?]+)"/g)) {
-    links.add(`https://wa.gov${match[1]}`)
+  for (const match of html.matchAll(/href="(?:https:\/\/parks\.wa\.gov)?(\/find-parks\/state-parks\/[^"#?]+)"/g)) {
+    links.add(`https://parks.wa.gov${match[1]}`)
   }
   return [...links]
 }
@@ -142,7 +142,6 @@ async function fetchWAGovParkLinks(): Promise<string[]> {
 
   for (let page = 0; page < WA_GOV_MAX_PAGES; page++) {
     const url = new URL(WA_GOV_PARKS_URL)
-    url.searchParams.set('field_park_type_target_id', 'State')
     url.searchParams.set('page', String(page))
 
     const pageLinks = extractParkLinks(await fetchTextWithTimeout(url.toString()))
@@ -157,7 +156,9 @@ async function fetchWAGovParkRecord(url: string): Promise<WAParkRecord | null> {
   const html = await fetchTextWithTimeout(url)
   if (!/(Accessible Trails|Bike Trails|Equestrian Trails|Hiking Trails)/i.test(html)) return null
 
-  const name = extractFirst(html, /field--name-title[^>]*>.*?<span[^>]*>(.*?)<\/span>/s)
+  const name =
+    extractFirst(html, /field--name-title[^>]*>.*?<span[^>]*>(.*?)<\/span>/s) ??
+    extractFirst(html, /<title>(.*?)\s*\|\s*Washington State Parks<\/title>/s)
   const latitude = extractFirst(html, /property="latitude"\s+content="([^"]+)"/)
   const longitude = extractFirst(html, /property="longitude"\s+content="([^"]+)"/)
 
@@ -198,7 +199,6 @@ async function waparksSyncHandler(req: HttpRequest, context: InvocationContext):
     let upserted = 0
     const container = getTrailsContainer()
     let source = 'socrata'
-    let warning: string | undefined
     let records: WAParkRecord[]
 
     try {
@@ -209,16 +209,14 @@ async function waparksSyncHandler(req: HttpRequest, context: InvocationContext):
       try {
         records = await fetchWAGovParkRecords(context)
       } catch (fallbackErr) {
-        warning = `WA State Parks sources unavailable: Socrata=${String(err)}; WA.gov=${String(fallbackErr)}`
-        context.warn(warning)
-        records = []
+        throw new Error(`WA State Parks sources unavailable: Socrata=${String(err)}; parks.wa.gov=${String(fallbackErr)}`)
       }
     }
 
     context.log(`WA State Parks: ${records.length} trail parks from ${source}`)
 
     if (!records.length) {
-      return { status: 200, jsonBody: { ok: true, upserted, source, warning: warning ?? 'No WA State Parks trail records found' } }
+      throw new Error(`No WA State Parks trail records found from ${source}`)
     }
 
     await runInBatches(records, UPSERT_BATCH_SIZE, async (park) => {
@@ -265,7 +263,7 @@ async function waparksSyncHandler(req: HttpRequest, context: InvocationContext):
       upserted++
     })
 
-    return { status: 200, jsonBody: { ok: true, upserted, source, warning } }
+    return { status: 200, jsonBody: { ok: true, upserted, source } }
   } catch (err) {
     context.error('WA Parks sync failed:', err)
     return { status: 500, jsonBody: { ok: false, error: String(err) } }
