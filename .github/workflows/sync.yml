@@ -66,14 +66,20 @@ jobs:
     steps:
       - name: Trigger WA Parks sync
         run: |
-          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-            -X POST "${{ secrets.SWA_API_URL }}/api/sync-waparks" \
-            -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
-            -H "Content-Type: application/json" --max-time 300)
-          BODY=$(echo "$RESPONSE" | sed '$d')
-          STATUS=$(echo "$RESPONSE" | tail -1 | cut -d: -f2)
-          echo "Status: $STATUS | Body: $BODY"
-          [ "$STATUS" = "200" ] || exit 1
+          for ATTEMPT in 1 2 3; do
+            RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+              -X POST "${{ secrets.SWA_API_URL }}/api/sync-waparks" \
+              -H "x-sync-token: ${{ secrets.SYNC_SECRET_TOKEN }}" \
+              -H "Content-Type: application/json" --max-time 300)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+            STATUS=$(echo "$RESPONSE" | tail -1 | cut -d: -f2)
+            echo "Attempt $ATTEMPT Status: $STATUS | Body: $BODY"
+            if [ "$STATUS" = "200" ]; then
+              exit 0
+            fi
+            sleep $((ATTEMPT * 20))
+          done
+          exit 1
 
   sync-wta:
     name: Sync WTA Enrichment
